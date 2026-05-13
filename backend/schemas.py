@@ -27,7 +27,7 @@ class FailureEventCreate(BaseModel):
     session_id: Optional[str] = None
     user_id: Optional[str] = None
     tags: Optional[List[str]] = None
-    metadata: Optional[Dict[str, Any]] = None
+    event_metadata: Optional[Dict[str, Any]] = None
 
     @field_validator("confidence_score", "retrieval_score", "context_relevance")
     def validate_score(cls, v):
@@ -69,7 +69,7 @@ class FailureEventResponse(BaseModel):
     confidence_score: Optional[float]
     retrieval_score: Optional[float]
     latency_ms: Optional[int]
-    user_id: Optional[str]
+    user_id: Optional[int]
     environment: Optional[str]
 
     class Config:
@@ -88,7 +88,7 @@ class FailureDetailResponse(FailureEventResponse):
     factual_accuracy: Optional[float]
     session_id: Optional[str]
     tags: Optional[List[str]]
-    metadata: Optional[Dict[str, Any]]
+    event_metadata: Optional[Dict[str, Any]]
 
 
 class PaginationInfo(BaseModel):
@@ -261,3 +261,24 @@ class HealthResponse(BaseModel):
     status: str
     timestamp: datetime
     components: Dict[str, str]  # component_name -> status
+
+
+# ============ Correlations ============
+
+class CorrelationItem(BaseModel):
+    """Statistical correlation between two factors."""
+    correlation_id: str
+    factor_a: str
+    factor_b: str
+    correlation_strength: float  # 0-1, phi coefficient absolute value
+    chi_squared: Optional[float] = None
+    p_value: Optional[float] = None
+    is_significant: bool
+    interpretation: str
+
+
+class CorrelationsResponse(BaseModel):
+    """Response to correlation analysis query."""
+    correlations: List[CorrelationItem]
+    computed_at: datetime
+    events_analyzed: int

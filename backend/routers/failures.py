@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 
 from database import get_db
@@ -56,7 +56,7 @@ async def get_failures(
     try:
         # Build filters
         filters = []
-        time_threshold = datetime.utcnow() - timedelta(hours=hours)
+        time_threshold = datetime.now(timezone.utc) - timedelta(hours=hours)
         filters.append(FailureEvent.timestamp >= time_threshold)
 
         if type:

@@ -3,13 +3,13 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from datetime import datetime
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 import os
 import uuid
 
 from database import init_db, get_db
-from routers import events, failures, patterns, models, stats, health
+from routers import events, failures, patterns, models, stats, health, correlations, feedback
 from auth import verify_api_key
 
 
@@ -59,6 +59,8 @@ app.include_router(failures.router, prefix="/api/v1", tags=["failures"])
 app.include_router(patterns.router, prefix="/api/v1", tags=["patterns"])
 app.include_router(models.router, prefix="/api/v1", tags=["models"])
 app.include_router(stats.router, prefix="/api/v1", tags=["stats"])
+app.include_router(correlations.router, prefix="/api/v1", tags=["correlations"])
+app.include_router(feedback.router, prefix="/api/v1", tags=["feedback"])
 
 
 # Global exception handler
@@ -70,7 +72,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             "error": {
                 "code": exc.detail if isinstance(exc.detail, str) else "unknown_error",
                 "message": str(exc.detail),
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 "request_id": getattr(request.state, "request_id", None),
             }
         },

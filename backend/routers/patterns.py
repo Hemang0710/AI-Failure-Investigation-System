@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 from database import get_db
@@ -129,7 +129,7 @@ async def submit_pattern_feedback(
         # Update pattern with feedback
         pattern.remediation_tested = feedback.remediation_tested
         pattern.remediation_effectiveness = feedback.remediation_effectiveness
-        pattern.updated_at = datetime.utcnow()
+        pattern.updated_at = datetime.now(timezone.utc)
 
         db.add(pattern)
         await db.commit()
@@ -140,7 +140,7 @@ async def submit_pattern_feedback(
         return PatternFeedbackResponse(
             feedback_id=f"fb_{pattern_id}",
             pattern_id=pattern_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             status="recorded",
         )
 

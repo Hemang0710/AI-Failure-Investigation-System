@@ -1,2 +1,414 @@
-# AI-Failure-Investigation-System
-An AI observability platform designed to track, analyze, and diagnose why LLM-generated responses fail in production workflows. The system monitors prompt versions, retrieval quality, hallucination risks, response confidence, and failure patterns to improve reliability and explainability in Generative AI applications.
+# AI Failure Investigation System
+
+An enterprise-grade observability platform for monitoring, analyzing, and diagnosing Large Language Model (LLM) failures in production environments. Built to help teams understand why AI-generated responses fail and how to improve reliability.
+
+---
+
+## 📋 Table of Contents
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+- [Project Structure](#project-structure)
+- [API Documentation](#api-documentation)
+- [Dashboard Features](#dashboard-features)
+- [Development](#development)
+- [Contributing](#contributing)
+- [License](#license)
+- [Author](#author)
+
+---
+
+## ✨ Features
+
+### Core Capabilities
+
+- **Failure Tracking** — Capture and categorize LLM failures (hallucinations, empty responses, timeouts)
+- **Pattern Detection** — Automatically identify clusters of similar failures
+- **Correlation Analysis** — Discover what factors cause failures (prompt length, model version, latency)
+- **Performance Metrics** — Per-model statistics (success rate, latency, failure distribution)
+- **Real-time Dashboard** — Visual analytics with interactive filtering and exploration
+- **REST API** — Programmatic access for integration with existing systems
+- **Python SDK** — Simple library for instrumenting LLM applications
+
+### Supported Failure Types
+
+- `hallucination` — Model generates incorrect or fabricated information
+- `empty_response` — Model returns blank or null response
+- `timeout` — Request exceeds time limit
+- `poor_quality` — Response is low-quality but not completely wrong
+- `custom` — User-defined failure categories
+
+### Severity Levels
+
+- `critical` — Production blocking issue requiring immediate attention
+- `high` — Significant impact on user experience
+- `medium` — Noticeable but manageable issue
+- `low` — Minor issue with minimal impact
+
+---
+
+## 🏗️ Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    Application Layer                         │
+│          (LangChain, LlamaIndex, or custom code)            │
+└──────────────────────┬───────────────────────────────────────┘
+                       │
+┌──────────────────────▼───────────────────────────────────────┐
+│              Instrumentation (Python SDK)                    │
+│    • Intercept LLM calls                                     │
+│    • Capture metadata & context                             │
+│    • Batch & queue events                                   │
+└──────────────────────┬───────────────────────────────────────┘
+                       │
+┌──────────────────────▼───────────────────────────────────────┐
+│                   REST API (FastAPI)                         │
+│    • Event ingestion  • Query failures  • Pattern analysis   │
+└──────────────────────┬───────────────────────────────────────┘
+                       │
+┌──────────────────────▼───────────────────────────────────────┐
+│               Storage Layer (PostgreSQL)                     │
+│    • Structured failure events                              │
+│    • Pattern metadata                                        │
+│    • User feedback & annotations                            │
+└──────────────────────┬───────────────────────────────────────┘
+                       │
+┌──────────────────────▼───────────────────────────────────────┐
+│              Analysis Engine                                 │
+│    • Clustering & pattern detection                         │
+│    • Correlation analysis                                    │
+│    • Trend detection & anomalies                            │
+└──────────────────────┬───────────────────────────────────────┘
+                       │
+┌──────────────────────▼───────────────────────────────────────┐
+│           Dashboard & Visualization (Streamlit)             │
+│    • Real-time metrics & trends                             │
+│    • Interactive exploration & filtering                    │
+│    • Pattern insights & recommendations                     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Docker & Docker Compose (recommended)
+- Or: Python 3.9+, PostgreSQL 14+
+
+### Option 1: Docker (Recommended)
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/ai-failure-investigation-system.git
+cd ai-failure-investigation-system
+
+# Start all services
+docker-compose up -d
+
+# Verify everything is running
+docker-compose ps
+
+# Check backend health
+curl http://localhost:8000/health
+```
+
+**Access:**
+- Dashboard: http://localhost:8501
+- API: http://localhost:8000
+- API Docs: http://localhost:8000/docs
+
+### Option 2: Local Development
+
+```bash
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install backend dependencies
+cd backend
+pip install -r requirements.txt
+
+# Set up environment
+cp .env.example .env
+# Edit .env with your configuration
+
+# Run migrations
+alembic upgrade head
+
+# Start backend
+python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+In a new terminal:
+
+```bash
+# Install dashboard dependencies
+cd dashboard
+pip install streamlit pandas httpx
+
+# Start dashboard
+streamlit run app.py
+```
+
+---
+
+## 📁 Project Structure
+
+```
+ai-failure-investigation-system/
+│
+├── backend/                          # FastAPI application
+│   ├── main.py                       # Application entry point
+│   ├── database.py                   # SQLAlchemy setup & models
+│   ├── models.py                     # ORM models (Failure, Pattern, etc.)
+│   ├── schemas.py                    # Pydantic request/response schemas
+│   ├── auth.py                       # API key authentication
+│   ├── routers/                      # API endpoint handlers
+│   │   ├── events.py                 # Event ingestion
+│   │   ├── failures.py               # Failure queries
+│   │   ├── patterns.py               # Pattern retrieval
+│   │   ├── models.py                 # Model statistics
+│   │   ├── correlations.py           # Correlation analysis
+│   │   ├── stats.py                  # System statistics
+│   │   ├── health.py                 # Health checks
+│   │   └── feedback.py               # User feedback
+│   ├── services/                     # Business logic
+│   │   └── pattern_engine.py         # Pattern detection & analysis
+│   ├── requirements.txt              # Python dependencies
+│   └── Dockerfile                    # Container config
+│
+├── dashboard/                        # Streamlit UI
+│   ├── app.py                        # Dashboard entry point
+│   ├── requirements.txt              # Dashboard dependencies
+│   └── Dockerfile                    # Container config
+│
+├── sdk/                              # Python SDK
+│   ├── __init__.py
+│   ├── client.py                     # FailureInvestigator client
+│   └── schemas.py                    # Data models
+│
+├── examples/                         # Usage examples
+│   └── openai_example.py             # Example: OpenAI integration
+│
+├── docker-compose.yml                # Multi-container orchestration
+├── .env.example                      # Environment variables template
+├── .gitignore                        # Git ignore rules
+├── README.md                         # This file
+├── CONTRIBUTING.md                   # Contribution guidelines
+└── LICENSE                           # License file
+```
+
+---
+
+## 📚 API Documentation
+
+### Base URL
+```
+http://localhost:8000/api/v1
+```
+
+### Authentication
+All API requests require Bearer token authentication:
+
+```bash
+Authorization: Bearer sk-demo-12345
+```
+
+### Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| **POST** | `/events` | Ingest failure events (batch) |
+| **GET** | `/failures` | Query failures with filters |
+| **GET** | `/failures/{id}` | Get failure details |
+| **GET** | `/patterns` | List detected patterns |
+| **POST** | `/patterns/{id}/feedback` | Submit pattern feedback |
+| **GET** | `/models` | Model performance statistics |
+| **GET** | `/correlations` | Factor correlation analysis |
+| **POST** | `/feedback` | Submit user feedback |
+| **POST** | `/events/trigger-analysis` | Trigger pattern analysis |
+| **GET** | `/stats` | System-wide statistics |
+| **GET** | `/health` | Health check |
+
+### Example: Report a Failure
+
+```bash
+curl -X POST http://localhost:8000/api/v1/events \
+  -H "Authorization: Bearer sk-demo-12345" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "events": [{
+      "timestamp": "2026-05-13T12:00:00Z",
+      "model_name": "gpt-4",
+      "provider": "openai",
+      "prompt": "What is the capital of France?",
+      "response": "The capital is London.",
+      "confidence_score": 0.3,
+      "failure_type": "hallucination",
+      "failure_severity": "high",
+      "latency_ms": 245
+    }]
+  }'
+```
+
+### Interactive API Docs
+
+Visit: **http://localhost:8000/docs** for Swagger UI with interactive examples
+
+---
+
+## 📊 Dashboard Features
+
+### 1. **Overview**
+- Key metrics (total events, failure rate, active patterns)
+- Failure distribution chart
+- Timeline showing failures over time
+- Trend indicators
+
+### 2. **Failures**
+- Browse individual failure events
+- Filter by model, severity, failure type
+- View detailed failure information
+- Pagination support
+
+### 3. **Patterns**
+- View detected failure clusters
+- Pattern frequency and confidence
+- Affected models and failure types
+- Remediation suggestions
+
+### 4. **Models**
+- Per-model performance statistics
+- Success/failure rates
+- Average latency
+- Failure type breakdown by model
+
+### 5. **Analysis**
+- Failure heatmap (time × models)
+- Identify hot spots and spikes
+- Time range selection
+- Export capabilities
+
+### 6. **Correlations**
+- Factor correlation matrix
+- Identify root causes
+- Actionable insights
+- Correlation strength visualization
+
+### 7. **Settings**
+- API configuration
+- Connection status
+- API key management
+- Test connectivity
+
+---
+
+## 💻 Development
+
+### Setup Development Environment
+
+```bash
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate
+
+# Install development dependencies
+cd backend
+pip install -r requirements.txt
+
+# Run tests
+pytest tests/
+
+# Format code
+black .
+flake8 .
+mypy .
+```
+
+### Environment Variables
+
+Create `.env` file:
+
+```env
+# Database
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ai_failure_db
+ASYNC_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/ai_failure_db
+
+# API Configuration
+HOST=0.0.0.0
+PORT=8000
+CORS_ORIGINS=http://localhost:3000,http://localhost:8501
+
+# Authentication
+DEMO_API_KEY=sk-demo-12345
+
+# Environment
+ENV=development
+```
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on:
+
+- How to submit issues
+- How to submit pull requests
+- Code style and standards
+- Development workflow
+- Testing requirements
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+---
+
+## 👤 Author
+
+**Hemang Patel**
+
+- Email: [hemangpatel0710@gmail.com](mailto:hemangpatel0710@gmail.com)
+- GitHub: [@yourgithubusername](https://github.com/yourgithubusername)
+- LinkedIn: [Your LinkedIn Profile](https://linkedin.com/in/yourprofile)
+
+---
+
+## 📞 Support & Contact
+
+- **Issues**: [GitHub Issues](https://github.com/yourusername/ai-failure-investigation-system/issues)
+- **Email**: hemangpatel0710@gmail.com
+- **Documentation**: See docs/ folder for detailed guides
+
+---
+
+## 🗺️ Roadmap
+
+- [ ] Multi-tenant support
+- [ ] Advanced ML-based root cause analysis
+- [ ] Slack/Email alerting
+- [ ] Custom dashboard widgets
+- [ ] Performance optimization for large-scale deployments
+- [ ] Export to data warehouses
+
+---
+
+## 🙏 Acknowledgments
+
+Built with:
+- [FastAPI](https://fastapi.tiangolo.com/)
+- [SQLAlchemy](https://www.sqlalchemy.org/)
+- [Streamlit](https://streamlit.io/)
+- [Pandas](https://pandas.pydata.org/)
+- [scikit-learn](https://scikit-learn.org/)
+
+---
+
+**Last Updated**: May 2026
+

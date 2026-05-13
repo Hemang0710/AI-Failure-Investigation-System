@@ -2,7 +2,7 @@
 
 from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, JSON, Enum, ForeignKey, Index
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
 
 from database import Base
@@ -36,7 +36,7 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(255), unique=True, index=True)
     email = Column(String(255), unique=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     api_keys = relationship("APIKey", back_populates="user")
     events = relationship("FailureEvent", back_populates="user")
@@ -52,8 +52,8 @@ class APIKey(Base):
     key_hash = Column(String(255), unique=True, index=True)
     name = Column(String(255))
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
 
     user = relationship("User", back_populates="api_keys")
 
@@ -67,7 +67,7 @@ class FailureEvent(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     # Timing
-    timestamp = Column(DateTime, nullable=False, index=True)
+    timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
     latency_ms = Column(Integer)
 
     # LLM Identification
@@ -101,12 +101,12 @@ class FailureEvent(Base):
     environment = Column(String(100), index=True)  # production, staging, dev
     session_id = Column(String(255), index=True)
     tags = Column(JSON, nullable=True)
-    metadata = Column(JSON, nullable=True)
+    event_metadata = Column(JSON, nullable=True)
 
     # Pattern Matching
     pattern_id = Column(Integer, ForeignKey("patterns.id"), nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Relationships
     user = relationship("User", back_populates="events")
@@ -134,8 +134,8 @@ class Pattern(Base):
     # Occurrence Statistics
     occurrence_count = Column(Integer, default=0)
     unique_users_affected = Column(Integer, default=0)
-    first_seen = Column(DateTime, nullable=False)
-    last_seen = Column(DateTime, nullable=False)
+    first_seen = Column(DateTime(timezone=True), nullable=False)
+    last_seen = Column(DateTime(timezone=True), nullable=False)
 
     # Quality Metrics
     average_confidence = Column(Float)
@@ -155,8 +155,8 @@ class Pattern(Base):
         "low": 0
     })
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     events = relationship("FailureEvent", back_populates="pattern")
@@ -175,7 +175,7 @@ class PatternFeedback(Base):
     implementation_notes = Column(Text, nullable=True)
     new_prompt_version_id = Column(String(255), nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     pattern = relationship("Pattern", back_populates="feedback")
 
@@ -193,7 +193,7 @@ class Feedback(Base):
     corrected_failure_type = Column(Enum(FailureTypeEnum), nullable=True)
     notes = Column(Text, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Relationships
     event = relationship("FailureEvent", back_populates="feedback")

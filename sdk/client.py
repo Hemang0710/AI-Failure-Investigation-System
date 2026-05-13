@@ -2,6 +2,8 @@
 
 import httpx
 import logging
+import threading
+import time
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import asyncio
@@ -43,6 +45,20 @@ class FailureInvestigator:
             headers={"Authorization": f"Bearer {api_key}"},
             timeout=timeout,
         )
+
+        # Start background flush thread
+        self._stop_event = threading.Event()
+        self._flush_thread = threading.Thread(
+            target=self._background_flush_loop,
+            daemon=True,
+        )
+        self._flush_thread.start()
+
+    def _background_flush_loop(self):
+        """Background thread that periodically flushes buffered events."""
+        while not self._stop_event.wait(self.flush_interval):
+            if self.events_buffer:
+                self.flush()
 
     async def async_client(self):
         """Get async HTTP client."""
@@ -95,25 +111,44 @@ class FailureInvestigator:
             logger.error(f"Failed to report failures: {str(e)}")
             return False
 
-    def flush(self) -> bool:
-        """Send all buffered events to the backend."""
+    def flush(self, retries: int = 3) -> bool:
+        """
+        Send all buffered events to the backend with exponential backoff retry.
+
+        Args:
+            retries: Number of retry attempts
+
+        Returns:
+            True if successful, False otherwise
+        """
         if not self.events_buffer:
             return True
 
-        try:
-            response = self.client.post(
-                f"{self.endpoint}/api/v1/events",
-                json={"events": self.events_buffer},
-            )
-            response.raise_for_status()
+        for attempt in range(retries):
+            try:
+                response = self.client.post(
+                    f"{self.endpoint}/api/v1/events",
+                    json={"events": self.events_buffer},
+                )
+                response.raise_for_status()
 
-            logger.info(f"Flushed {len(self.events_buffer)} events")
-            self.events_buffer = []
-            return True
+                logger.info(f"Flushed {len(self.events_buffer)} events")
+                self.events_buffer = []
+                return True
 
-        except Exception as e:
-            logger.error(f"Failed to flush events: {str(e)}")
-            return False
+            except Exception as e:
+                if attempt < retries - 1:
+                    # Exponential backoff: 1s, 2s, 4s
+                    backoff_time = 2 ** attempt
+                    logger.warning(
+                        f"Flush attempt {attempt + 1} failed, retrying in {backoff_time}s: {str(e)}"
+                    )
+                    time.sleep(backoff_time)
+                else:
+                    logger.error(f"Failed to flush events after {retries} attempts: {str(e)}")
+                    return False
+
+        return False
 
     def get_failures(
         self,
@@ -244,9 +279,105 @@ class FailureInvestigator:
             logger.error(f"Failed to query stats: {str(e)}")
             return None
 
+    def get_models(self, hours: int = 24) -> Optional[Dict[str, Any]]:
+        """
+        Get per-model performance statistics.
+
+        Args:
+            hours: Look back N hours
+
+        Returns:
+            Response dict with model stats, or None on error
+        """
+        try:
+            response = self.client.get(
+                f"{self.endpoint}/api/v1/models",
+                params={"hours": hours},
+            )
+            response.raise_for_status()
+
+            return response.json()
+
+        except Exception as e:
+            logger.error(f"Failed to query model stats: {str(e)}")
+            return None
+
+    def get_correlations(
+        self,
+        model: Optional[str] = None,
+        hours: int = 168,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get factor correlation analysis.
+
+        Args:
+            model: Optional model filter
+            hours: Analysis window in hours
+
+        Returns:
+            Response dict with correlations, or None on error
+        """
+        try:
+            params = {"hours": hours}
+            if model:
+                params["model"] = model
+
+            response = self.client.get(
+                f"{self.endpoint}/api/v1/correlations",
+                params=params,
+            )
+            response.raise_for_status()
+
+            return response.json()
+
+        except Exception as e:
+            logger.error(f"Failed to query correlations: {str(e)}")
+            return None
+
+    def submit_feedback(
+        self,
+        event_id: str,
+        is_actual_failure: bool,
+        corrected_failure_type: Optional[str] = None,
+        notes: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Submit user feedback on a failure classification.
+
+        Args:
+            event_id: Event ID (evt_xxx)
+            is_actual_failure: Whether this is confirmed as a failure
+            corrected_failure_type: If classification should be corrected
+            notes: Optional user notes
+
+        Returns:
+            Response dict with feedback_id, or None on error
+        """
+        try:
+            payload = {
+                "event_id": event_id,
+                "is_actual_failure": is_actual_failure,
+            }
+            if corrected_failure_type:
+                payload["corrected_failure_type"] = corrected_failure_type
+            if notes:
+                payload["notes"] = notes
+
+            response = self.client.post(
+                f"{self.endpoint}/api/v1/feedback",
+                json=payload,
+            )
+            response.raise_for_status()
+
+            return response.json()
+
+        except Exception as e:
+            logger.error(f"Failed to submit feedback: {str(e)}")
+            return None
+
     def track(self):
         """
-        Decorator to automatically track LLM function calls.
+        Decorator to automatically track LLM function calls and report failures.
 
         Usage:
             @investigator.track()
@@ -261,17 +392,26 @@ class FailureInvestigator:
                 try:
                     result = func(*args, **kwargs)
                     latency_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
-
-                    # Auto-detect failures if possible
-                    # For now, just track successful calls
-                    # In Phase 2, add automatic failure detection
-
+                    # Success - no failure to report
                     return result
 
                 except Exception as e:
                     latency_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
-                    # Track exception
-                    logger.error(f"LLM call failed: {str(e)}")
+
+                    # Report failure to API
+                    try:
+                        self.report_failure({
+                            "timestamp": start_time.isoformat() + "Z",
+                            "model_name": getattr(func, "__llm_model__", "unknown"),
+                            "prompt": str(args[0]) if args else "unknown",
+                            "response": "",
+                            "failure_type": "timeout" if "timeout" in str(e).lower() else "semantic_error",
+                            "failure_severity": "high",
+                            "latency_ms": latency_ms,
+                        })
+                    except Exception as report_err:
+                        logger.error(f"Failed to report tracked exception: {str(report_err)}")
+
                     raise
 
             return wrapper
@@ -280,7 +420,14 @@ class FailureInvestigator:
 
     def close(self):
         """Close the HTTP client and flush any remaining events."""
+        # Stop background flush thread
+        self._stop_event.set()
+        self._flush_thread.join(timeout=5)
+
+        # Final flush
         self.flush()
+
+        # Close HTTP client
         self.client.close()
 
     def __enter__(self):

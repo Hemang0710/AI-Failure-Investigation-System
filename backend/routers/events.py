@@ -1,16 +1,18 @@
 """Event ingestion endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Header, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import insert
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 import logging
+import asyncio
 
-from database import get_db
+from database import get_db, AsyncSessionLocal
 from auth import verify_api_key
 from models import FailureEvent
 from schemas import BatchEventIngestion, EventIngestionResponse
+from services.pattern_engine import run_pattern_analysis
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -68,7 +70,7 @@ async def ingest_events(
                 environment=event_data.environment or "production",
                 session_id=event_data.session_id,
                 tags=event_data.tags,
-                metadata=event_data.metadata or {},
+                event_metadata=event_data.event_metadata or {},
             )
             events_to_insert.append(event)
 
@@ -95,7 +97,7 @@ async def ingest_events(
                     "environment": e.environment,
                     "session_id": e.session_id,
                     "tags": e.tags,
-                    "metadata": e.metadata,
+                    "event_metadata": e.event_metadata,
                 }
                 for e in events_to_insert
             ],
@@ -112,11 +114,18 @@ async def ingest_events(
             },
         )
 
+        # Trigger pattern analysis asynchronously
+        async def _trigger_analysis():
+            async with AsyncSessionLocal() as analysis_db:
+                await run_pattern_analysis(db=analysis_db, hours=168, min_occurrences=3)
+
+        asyncio.create_task(_trigger_analysis())
+
         return EventIngestionResponse(
             status="received",
             event_count=len(batch.events),
             batch_id=batch_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
 
     except Exception as e:
@@ -129,3 +138,35 @@ async def ingest_events(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to ingest events",
         )
+
+
+@router.post(
+    "/events/trigger-analysis",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Manually trigger pattern analysis",
+    tags=["events"],
+)
+async def trigger_pattern_analysis(
+    hours: int = Query(168, ge=1, le=720, description="Analyze events from last N hours"),
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Manually trigger pattern analysis on existing failure events.
+    Useful for ad-hoc analysis or dashboard-initiated re-analysis.
+    Returns 202 Accepted - analysis runs in background.
+    """
+    token = await verify_api_key(authorization)
+
+    async def _trigger():
+        async with AsyncSessionLocal() as analysis_db:
+            result = await run_pattern_analysis(db=analysis_db, hours=hours, min_occurrences=3)
+            logger.info(f"Manual pattern analysis triggered: {result} patterns")
+
+    asyncio.create_task(_trigger())
+
+    return {
+        "status": "analysis_triggered",
+        "hours": hours,
+        "timestamp": datetime.now(timezone.utc),
+    }

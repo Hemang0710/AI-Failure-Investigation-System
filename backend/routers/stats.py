@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 
 from database import get_db
@@ -40,7 +40,7 @@ async def get_system_stats(
     token = await verify_api_key(authorization)
 
     try:
-        time_threshold = datetime.utcnow() - timedelta(hours=hours)
+        time_threshold = datetime.now(timezone.utc) - timedelta(hours=hours)
 
         # Total events
         total_events_query = select(func.count()).select_from(FailureEvent).where(
@@ -124,12 +124,60 @@ async def get_system_stats(
         )
         patterns_with_remediation = await db.scalar(remediation_query) or 0
 
-        # Determine trend (would need historical data for proper implementation)
-        # For MVP, default to "stable"
-        trend = "stable"
+        # Calculate failure rate trend by comparing first half vs second half
+        half_hours = hours // 2
+        mid_time = time_threshold + timedelta(hours=half_hours)
 
-        start_time = datetime.utcnow() - timedelta(hours=hours)
-        end_time = datetime.utcnow()
+        # First half failure count
+        first_half_query = select(func.count()).select_from(FailureEvent).where(
+            and_(
+                FailureEvent.timestamp >= time_threshold,
+                FailureEvent.timestamp < mid_time,
+                FailureEvent.failure_type.isnot(None),
+            )
+        )
+        first_half_failures = await db.scalar(first_half_query) or 0
+
+        # First half total count
+        first_half_total_query = select(func.count()).select_from(FailureEvent).where(
+            and_(
+                FailureEvent.timestamp >= time_threshold,
+                FailureEvent.timestamp < mid_time,
+            )
+        )
+        first_half_total = await db.scalar(first_half_total_query) or 1
+
+        # Second half failure count
+        second_half_query = select(func.count()).select_from(FailureEvent).where(
+            and_(
+                FailureEvent.timestamp >= mid_time,
+                FailureEvent.failure_type.isnot(None),
+            )
+        )
+        second_half_failures = await db.scalar(second_half_query) or 0
+
+        # Second half total count
+        second_half_total_query = select(func.count()).select_from(FailureEvent).where(
+            FailureEvent.timestamp >= mid_time
+        )
+        second_half_total = await db.scalar(second_half_total_query) or 1
+
+        # Calculate failure rates for each half
+        first_half_rate = first_half_failures / first_half_total if first_half_total > 0 else 0.0
+        second_half_rate = second_half_failures / second_half_total if second_half_total > 0 else 0.0
+
+        # Determine trend (>10% change threshold)
+        if first_half_rate == 0:
+            trend = "stable" if second_half_rate == 0 else "increasing"
+        elif second_half_rate > first_half_rate * 1.1:
+            trend = "increasing"
+        elif second_half_rate < first_half_rate * 0.9:
+            trend = "decreasing"
+        else:
+            trend = "stable"
+
+        start_time = datetime.now(timezone.utc) - timedelta(hours=hours)
+        end_time = datetime.now(timezone.utc)
 
         return SystemStats(
             time_period=TimePeriod(

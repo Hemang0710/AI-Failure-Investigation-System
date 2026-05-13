@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
-from datetime import datetime, timedelta
+from sqlalchemy import select, func, and_, case
+from datetime import datetime, timedelta, timezone
 import logging
 
 from database import get_db
@@ -39,109 +39,65 @@ async def get_model_stats(
     token = await verify_api_key(authorization)
 
     try:
-        time_threshold = datetime.utcnow() - timedelta(hours=hours)
+        time_threshold = datetime.now(timezone.utc) - timedelta(hours=hours)
 
-        # Get all unique models
-        models_query = select(FailureEvent.model_name).where(
+        # Single GROUP BY query to get all stats per model
+        stmt = select(
+            FailureEvent.model_name,
+            func.count().label("total_events"),
+            func.count(
+                case((FailureEvent.failure_type.isnot(None), 1))
+            ).label("failure_count"),
+            func.avg(FailureEvent.confidence_score).label("avg_confidence"),
+            func.avg(FailureEvent.latency_ms).label("avg_latency"),
+            func.count(func.distinct(FailureEvent.failure_type)).label("distinct_types"),
+            func.sum(
+                case((FailureEvent.failure_severity == "critical", 1), else_=0)
+            ).label("sev_critical"),
+            func.sum(
+                case((FailureEvent.failure_severity == "high", 1), else_=0)
+            ).label("sev_high"),
+            func.sum(
+                case((FailureEvent.failure_severity == "medium", 1), else_=0)
+            ).label("sev_medium"),
+            func.sum(
+                case((FailureEvent.failure_severity == "low", 1), else_=0)
+            ).label("sev_low"),
+        ).where(
             FailureEvent.timestamp >= time_threshold
-        ).distinct()
-        result = await db.execute(models_query)
-        model_names = result.scalars().all()
+        ).group_by(FailureEvent.model_name)
+
+        result = await db.execute(stmt)
+        rows = result.mappings().all()
 
         stats_list = []
-
-        for model_name in model_names:
-            # Count total events
-            total_query = select(func.count()).select_from(FailureEvent).where(
-                and_(
-                    FailureEvent.model_name == model_name,
-                    FailureEvent.timestamp >= time_threshold,
-                )
-            )
-            total_count = await db.scalar(total_query) or 0
-
-            # Count failures
-            failure_query = select(func.count()).select_from(FailureEvent).where(
-                and_(
-                    FailureEvent.model_name == model_name,
-                    FailureEvent.failure_type.isnot(None),
-                    FailureEvent.timestamp >= time_threshold,
-                )
-            )
-            failure_count = await db.scalar(failure_query) or 0
-
-            # Calculate metrics
-            avg_confidence_query = select(func.avg(FailureEvent.confidence_score)).select_from(
-                FailureEvent
-            ).where(
-                and_(
-                    FailureEvent.model_name == model_name,
-                    FailureEvent.timestamp >= time_threshold,
-                )
-            )
-            avg_confidence = await db.scalar(avg_confidence_query)
-
-            avg_latency_query = select(func.avg(FailureEvent.latency_ms)).select_from(
-                FailureEvent
-            ).where(
-                and_(
-                    FailureEvent.model_name == model_name,
-                    FailureEvent.timestamp >= time_threshold,
-                )
-            )
-            avg_latency = await db.scalar(avg_latency_query)
-
-            # Failure types
-            failure_types_query = select(
-                FailureEvent.failure_type, func.count()
-            ).select_from(FailureEvent).where(
-                and_(
-                    FailureEvent.model_name == model_name,
-                    FailureEvent.timestamp >= time_threshold,
-                )
-            ).group_by(FailureEvent.failure_type)
-            failure_types_result = await db.execute(failure_types_query)
-            distinct_types = len(failure_types_result.all())
-
-            # Severity breakdown
-            severity_query = select(
-                FailureEvent.failure_severity, func.count()
-            ).select_from(FailureEvent).where(
-                and_(
-                    FailureEvent.model_name == model_name,
-                    FailureEvent.timestamp >= time_threshold,
-                )
-            ).group_by(FailureEvent.failure_severity)
-            severity_result = await db.execute(severity_query)
-            severity_rows = severity_result.all()
+        for row in rows:
+            total = row["total_events"]
+            failures = row["failure_count"]
+            failure_rate = failures / total if total > 0 else 0.0
 
             severity_breakdown = {
-                "critical": 0,
-                "high": 0,
-                "medium": 0,
-                "low": 0,
+                "critical": row["sev_critical"] or 0,
+                "high": row["sev_high"] or 0,
+                "medium": row["sev_medium"] or 0,
+                "low": row["sev_low"] or 0,
             }
-            for severity, count in severity_rows:
-                if severity:
-                    severity_breakdown[severity] = count
-
-            failure_rate = failure_count / total_count if total_count > 0 else 0.0
 
             stats_list.append(
                 ModelStats(
-                    model_name=model_name,
-                    total_events=total_count,
-                    failure_count=failure_count,
+                    model_name=row["model_name"],
+                    total_events=total,
+                    failure_count=failures,
                     failure_rate=round(failure_rate, 4),
-                    average_confidence=avg_confidence,
-                    average_latency_ms=avg_latency,
-                    distinct_failure_types=distinct_types,
+                    average_confidence=row["avg_confidence"],
+                    average_latency_ms=row["avg_latency"],
+                    distinct_failure_types=row["distinct_types"] or 0,
                     severity_breakdown=severity_breakdown,
                 )
             )
 
-        start_time = datetime.utcnow() - timedelta(hours=hours)
-        end_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc) - timedelta(hours=hours)
+        end_time = datetime.now(timezone.utc)
 
         return ModelsQueryResponse(
             models=stats_list,
