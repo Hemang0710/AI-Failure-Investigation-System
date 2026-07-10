@@ -1,0 +1,17 @@
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["venv", ".venv", "Modules", "**/migrations/*"]
+
+[tool.ruff.lint]
+# Pyflakes (F) catches real bugs (unused imports, undefined names);
+# pycodestyle (E/W) covers basic style. Line length is handled above.
+select = ["E", "F", "W"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+# Tests import backend modules directly (import main, redaction, ...) and run
+# against SQLite, so no Postgres is required in CI.
+pythonpath = ["backend"]
+testpaths = ["backend/tests"]
+addopts = "-q"

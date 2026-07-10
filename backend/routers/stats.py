@@ -115,7 +115,7 @@ async def get_system_stats(
 
         # Patterns with remediation
         remediation_query = select(func.count()).select_from(Pattern).where(
-            Pattern.remediation_tested == True
+            Pattern.remediation_tested.is_(True)
         )
         patterns_with_remediation = await db.scalar(remediation_query) or 0
 

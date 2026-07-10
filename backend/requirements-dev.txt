@@ -1,0 +1,8 @@
+# Development & CI dependencies (installed on top of runtime requirements)
+-r requirements.txt
+
+# Async SQLite driver used by the test suite (tests run without Postgres)
+aiosqlite>=0.19.0
+
+# Linter/formatter (replaces the flake8 role in CI)
+ruff>=0.6,<0.13

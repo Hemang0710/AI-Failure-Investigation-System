@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import insert
 from datetime import datetime, timezone
+import os
 import uuid
 import logging
 import asyncio
@@ -116,12 +117,15 @@ async def ingest_events(
             },
         )
 
-        # Trigger pattern analysis asynchronously
-        async def _trigger_analysis():
-            async with AsyncSessionLocal() as analysis_db:
-                await run_pattern_analysis(db=analysis_db, hours=168, min_occurrences=3)
+        # Trigger pattern analysis asynchronously. Disable via
+        # PATTERN_ANALYSIS_ON_INGEST=false to run it on a schedule instead
+        # (and to keep tests deterministic).
+        if os.getenv("PATTERN_ANALYSIS_ON_INGEST", "true").lower() == "true":
+            async def _trigger_analysis():
+                async with AsyncSessionLocal() as analysis_db:
+                    await run_pattern_analysis(db=analysis_db, hours=168, min_occurrences=3)
 
-        asyncio.create_task(_trigger_analysis())
+            asyncio.create_task(_trigger_analysis())
 
         return EventIngestionResponse(
             status="received",

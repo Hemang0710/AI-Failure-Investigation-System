@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 import logging
 
 from database import get_db
-from models import FailureEvent, FailureTypeEnum, SeverityEnum
+from models import FailureEvent
 from schemas import FailuresQueryResponse, FailureEventResponse, FailureDetailResponse, PaginationInfo
 
 logger = logging.getLogger(__name__)

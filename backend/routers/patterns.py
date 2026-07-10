@@ -65,7 +65,7 @@ async def get_patterns(
         total_patterns = await db.scalar(total_patterns_query)
 
         patterns_with_remediation_query = select(func.count()).select_from(Pattern).where(
-            Pattern.remediation_tested == True
+            Pattern.remediation_tested.is_(True)
         )
         patterns_with_remediation = await db.scalar(patterns_with_remediation_query)
 

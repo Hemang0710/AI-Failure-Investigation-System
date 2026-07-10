@@ -2,17 +2,26 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 import pandas as pd
-import numpy as np
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func, case, text
-from sqlalchemy.orm import selectinload
+from sqlalchemy import select, and_
 
 from models import FailureEvent, Pattern
-from schemas import SeverityEnum
 
 logger = logging.getLogger(__name__)
+
+
+def _to_utc_datetime(value) -> datetime:
+    """Normalize a pandas/py timestamp to a tz-aware UTC datetime.
+
+    pandas drops tz info when aggregating the tz-aware event timestamps, which
+    asyncpg then rejects for a TIMESTAMP WITH TIME ZONE column. Events are
+    stored in UTC, so a naive value is localized to UTC.
+    """
+    ts = pd.Timestamp(value)
+    ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+    return ts.to_pydatetime()
 
 
 async def run_pattern_analysis(
@@ -58,8 +67,8 @@ async def run_pattern_analysis(
             stats = {
                 "occurrence_count": int(row["occurrence_count"]),
                 "unique_users_affected": int(row.get("unique_users_affected", 1)),
-                "first_seen": row["first_seen"],
-                "last_seen": row["last_seen"],
+                "first_seen": _to_utc_datetime(row["first_seen"]),
+                "last_seen": _to_utc_datetime(row["last_seen"]),
                 "average_confidence": float(row.get("avg_confidence", 0)),
                 "average_latency_ms": float(row.get("avg_latency_ms", 0)),
                 "average_retrieval_score": float(row.get("avg_retrieval_score", 0)) if pd.notna(row.get("avg_retrieval_score")) else None,

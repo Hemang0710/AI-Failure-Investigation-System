@@ -9,7 +9,7 @@ import asyncio
 import os
 import uuid
 
-from database import init_db, get_db
+from database import init_db
 from routers import events, failures, patterns, models, stats, health, correlations, feedback
 from auth import verify_api_key
 from ratelimit import default_rate_limit

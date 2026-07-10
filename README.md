@@ -1,5 +1,9 @@
 # AI Failure Investigation System
 
+[![CI](https://github.com/yourusername/ai-failure-investigation-system/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/ai-failure-investigation-system/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
+
 An enterprise-grade observability platform for monitoring, analyzing, and diagnosing Large Language Model (LLM) failures in production environments. Built to help teams understand why AI-generated responses fail and how to improve reliability.
 
 ---
@@ -35,9 +39,13 @@ An enterprise-grade observability platform for monitoring, analyzing, and diagno
 
 - `hallucination` — Model generates incorrect or fabricated information
 - `empty_response` — Model returns blank or null response
+- `malformed_response` — Output is structurally invalid (e.g. broken JSON)
 - `timeout` — Request exceeds time limit
-- `poor_quality` — Response is low-quality but not completely wrong
-- `custom` — User-defined failure categories
+- `semantic_error` — Response is low-quality or logically wrong
+- `confidence_mismatch` — Reported confidence doesn't match actual quality
+- `retrieval_failure` — RAG retrieval returned poor or no context
+- `rate_limited` — Provider rate limit hit
+- `token_limit` — Context or output token limit exceeded
 
 ### Severity Levels
 
@@ -324,19 +332,35 @@ Visit: **http://localhost:8000/docs** for Swagger UI with interactive examples
 ```bash
 # Create virtual environment
 python -m venv venv
-source venv/bin/activate
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install development dependencies
-cd backend
-pip install -r requirements.txt
+# Install runtime + dev/test dependencies
+pip install -r backend/requirements-dev.txt
+```
 
-# Run tests
-pytest tests/
+### Lint & Test
 
-# Format code
-black .
-flake8 .
-mypy .
+Tests run against SQLite, so no database is required. Both commands run from the
+repository root (configuration lives in `pyproject.toml`):
+
+```bash
+# Lint
+ruff check backend sdk scripts
+
+# Run the test suite
+pytest
+```
+
+These are the same checks enforced by CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
+
+### Seed Demo Data
+
+Populate a running instance with realistic, correlated failure data so the
+dashboard, patterns, and correlations views have something to show:
+
+```bash
+export FAILURE_INVESTIGATOR_API_KEY=sk-...   # your API key
+python scripts/seed_demo.py --events 250 --days 7
 ```
 
 ### Environment Variables
