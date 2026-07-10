@@ -365,9 +365,28 @@ RATE_LIMIT_ENABLED=true
 RATE_LIMIT_STORAGE_URI=memory://
 MAX_REQUEST_BYTES=10485760
 
+# PII redaction (on by default) - strips emails, cards, SSNs, phones, IPs, keys
+# from prompts/responses before storage. See SECURITY.md for scope.
+PII_REDACTION_ENABLED=true
+PII_REDACTION_TYPES=email,credit_card,ssn,phone,ip,api_key
+
+# Data retention (off by default) - delete events older than N days (0 = forever)
+DATA_RETENTION_DAYS=0
+RETENTION_SWEEP_INTERVAL_HOURS=24
+
 # Environment
 ENV=development
 ```
+
+---
+
+## 🔒 Security & Privacy
+
+- **Authentication** — per-user API keys stored as SHA-256 hashes; all API routes are authenticated and rate limited.
+- **PII redaction** (on by default) — emails, cards, SSNs, phones, IPs, and API keys are stripped from prompts/responses before storage.
+- **Data retention** (opt-in) — auto-delete events older than `DATA_RETENTION_DAYS`.
+
+See [SECURITY.md](SECURITY.md) for the full policy, redaction scope, and how to report a vulnerability.
 
 ---
 

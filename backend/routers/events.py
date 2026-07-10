@@ -12,6 +12,7 @@ from database import get_db, AsyncSessionLocal
 from auth import verify_api_key
 from models import FailureEvent, APIKey
 from ratelimit import ingest_rate_limit
+from redaction import redact_text, redact_list
 from schemas import BatchEventIngestion, EventIngestionResponse
 from services.pattern_engine import run_pattern_analysis
 
@@ -51,21 +52,22 @@ async def ingest_events(
         for event_data in batch.events:
             event_id = f"evt_{uuid.uuid4().hex[:8]}"
 
+            # Redact PII before anything is persisted (no-op if disabled).
             event = FailureEvent(
                 event_id=event_id,
                 user_id=api_key.user_id,
                 timestamp=event_data.timestamp,
                 model_name=event_data.model_name,
                 provider=event_data.provider,
-                prompt=event_data.prompt,
-                response=event_data.response,
+                prompt=redact_text(event_data.prompt),
+                response=redact_text(event_data.response),
                 response_length=event_data.response_length,
                 latency_ms=event_data.latency_ms,
                 confidence_score=event_data.confidence_score,
                 failure_type=event_data.failure_type,
                 failure_severity=event_data.failure_severity,
                 retrieval_score=event_data.retrieval_score,
-                retrieval_results=event_data.retrieval_results,
+                retrieval_results=redact_list(event_data.retrieval_results),
                 context_relevance=event_data.context_relevance,
                 environment=event_data.environment or "production",
                 session_id=event_data.session_id,

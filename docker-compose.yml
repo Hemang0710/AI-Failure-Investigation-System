@@ -29,6 +29,9 @@ services:
       SQL_ECHO: 'false'
       BOOTSTRAP_API_KEY: ${API_KEY:?Set API_KEY in .env}
       CORS_ORIGINS: http://localhost:3000,http://localhost:8501
+      # PII redaction on by default; data retention off by default. See .env.example.
+      PII_REDACTION_ENABLED: ${PII_REDACTION_ENABLED:-true}
+      DATA_RETENTION_DAYS: ${DATA_RETENTION_DAYS:-0}
     depends_on:
       timescaledb:
         condition: service_healthy

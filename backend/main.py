@@ -4,7 +4,8 @@ from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from datetime import datetime, timezone
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
+import asyncio
 import os
 import uuid
 
@@ -12,6 +13,7 @@ from database import init_db, get_db
 from routers import events, failures, patterns, models, stats, health, correlations, feedback
 from auth import verify_api_key
 from ratelimit import default_rate_limit
+from retention import retention_loop, DATA_RETENTION_DAYS
 
 
 # Database initialization
@@ -21,9 +23,20 @@ async def lifespan(app: FastAPI):
     print("Initializing database...")
     await init_db()
     print("Database initialized successfully")
+
+    # Background data-retention sweep (only when a retention window is set)
+    retention_task = None
+    if DATA_RETENTION_DAYS > 0:
+        retention_task = asyncio.create_task(retention_loop())
+
     yield
+
     # Shutdown
     print("Application shutting down...")
+    if retention_task is not None:
+        retention_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await retention_task
 
 
 app = FastAPI(
