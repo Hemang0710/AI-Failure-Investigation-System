@@ -182,22 +182,19 @@ router = APIRouter(prefix="/api/v1", tags=["example"])
 @router.post("/endpoint")
 async def endpoint(
     body: FailureEvent,
-    authorization: str = None,
 ) -> dict:
     """
     Brief description of endpoint.
-    
+
     Args:
         body: Request body
-        authorization: Bearer token
-        
+
     Returns:
         Response data
-        
-    Raises:
-        HTTPException: If authentication fails
     """
-    token = await verify_api_key(authorization)
+    # Authentication is enforced router-wide in main.py via
+    # dependencies=[Depends(verify_api_key)]. If the endpoint needs the
+    # caller's identity, add: api_key: APIKey = Depends(verify_api_key)
     # Implementation
     return {"status": "ok"}
 ```

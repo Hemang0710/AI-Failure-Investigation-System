@@ -1,6 +1,6 @@
 """User feedback endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timezone
@@ -9,7 +9,7 @@ import logging
 
 from database import get_db
 from auth import verify_api_key
-from models import Feedback, FailureEvent
+from models import Feedback, FailureEvent, APIKey
 from schemas import UserFeedbackCreate, UserFeedbackResponse
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ router = APIRouter()
 )
 async def submit_feedback(
     feedback_data: UserFeedbackCreate,
-    authorization: str = Header(None),
+    api_key: APIKey = Depends(verify_api_key),
     db: AsyncSession = Depends(get_db),
 ) -> UserFeedbackResponse:
     """
@@ -37,8 +37,6 @@ async def submit_feedback(
 
     Returns feedback_id for tracking.
     """
-    token = await verify_api_key(authorization)
-
     try:
         # Resolve event_id string to integer PK
         event_query = select(FailureEvent).where(
@@ -58,7 +56,7 @@ async def submit_feedback(
         feedback = Feedback(
             feedback_id=feedback_id,
             event_id=event.id,  # Integer FK
-            user_id=1,  # TODO: derive from token claims
+            user_id=api_key.user_id,
             is_actual_failure=feedback_data.is_actual_failure,
             corrected_failure_type=feedback_data.corrected_failure_type,
             notes=feedback_data.notes,

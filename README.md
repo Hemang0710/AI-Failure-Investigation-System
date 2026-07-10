@@ -106,6 +106,11 @@ An enterprise-grade observability platform for monitoring, analyzing, and diagno
 git clone https://github.com/yourusername/ai-failure-investigation-system.git
 cd ai-failure-investigation-system
 
+# Configure secrets (Postgres password + API key)
+cp .env.example .env
+# Edit .env - generate a key with:
+#   python -c "import secrets; print('sk-' + secrets.token_urlsafe(32))"
+
 # Start all services
 docker-compose up -d
 
@@ -215,8 +220,13 @@ http://localhost:8000/api/v1
 All API requests require Bearer token authentication:
 
 ```bash
-Authorization: Bearer sk-demo-12345
+Authorization: Bearer $API_KEY
 ```
+
+API keys are stored hashed (SHA-256) in the database. The key set as
+`API_KEY` in your `.env` is provisioned automatically on first startup;
+if none is configured, the backend generates one and prints it once to
+the startup logs.
 
 ### Endpoints
 
@@ -238,7 +248,7 @@ Authorization: Bearer sk-demo-12345
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/events \
-  -H "Authorization: Bearer sk-demo-12345" \
+  -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "events": [{
@@ -343,8 +353,9 @@ HOST=0.0.0.0
 PORT=8000
 CORS_ORIGINS=http://localhost:3000,http://localhost:8501
 
-# Authentication
-DEMO_API_KEY=sk-demo-12345
+# Authentication - key provisioned (hashed) on first startup.
+# Generate with: python -c "import secrets; print('sk-' + secrets.token_urlsafe(32))"
+BOOTSTRAP_API_KEY=your-generated-key
 
 # Environment
 ENV=development

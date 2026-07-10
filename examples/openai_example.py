@@ -41,7 +41,7 @@ def main():
 
     # Initialize investigator
     investigator = FailureInvestigator(
-        api_key="sk-demo-12345",  # From .env or use your key
+        api_key=os.environ["FAILURE_INVESTIGATOR_API_KEY"],
         endpoint="http://localhost:8000",
         batch_size=5,  # Auto-flush after 5 events
     )

@@ -1,13 +1,12 @@
 """System statistics endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from datetime import datetime, timedelta, timezone
 import logging
 
 from database import get_db
-from auth import verify_api_key
 from models import FailureEvent, Pattern
 from schemas import SystemStats, TimePeriod
 
@@ -22,7 +21,6 @@ router = APIRouter()
 )
 async def get_system_stats(
     hours: int = Query(24, ge=1, le=720, description="Look back N hours"),
-    authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -36,9 +34,6 @@ async def get_system_stats(
     - Model with highest failures
     - Active patterns
     """
-    # Verify API key
-    token = await verify_api_key(authorization)
-
     try:
         time_threshold = datetime.now(timezone.utc) - timedelta(hours=hours)
 

@@ -454,7 +454,12 @@ def create_investigator(
     """
     import os
 
-    api_key = api_key or os.getenv("FAILURE_INVESTIGATOR_API_KEY", "sk-demo-12345")
+    api_key = api_key or os.getenv("FAILURE_INVESTIGATOR_API_KEY")
+    if not api_key:
+        raise ValueError(
+            "No API key provided. Pass api_key or set the "
+            "FAILURE_INVESTIGATOR_API_KEY environment variable."
+        )
     endpoint = endpoint or os.getenv("FAILURE_INVESTIGATOR_ENDPOINT", "http://localhost:8000")
 
     return FailureInvestigator(api_key=api_key, endpoint=endpoint)

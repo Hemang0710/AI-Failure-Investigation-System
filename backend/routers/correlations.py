@@ -1,6 +1,6 @@
 """Correlation analysis endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from datetime import datetime, timedelta, timezone
@@ -9,7 +9,6 @@ import logging
 import uuid
 
 from database import get_db
-from auth import verify_api_key
 from models import FailureEvent
 from schemas import CorrelationsResponse, CorrelationItem
 
@@ -26,7 +25,6 @@ async def get_correlations(
     model: str = Query(None, description="Optional filter by model name"),
     hours: int = Query(168, ge=1, le=720, description="Look back N hours"),
     limit: int = Query(20, ge=1, le=50, description="Max number of correlations to return"),
-    authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -35,8 +33,6 @@ async def get_correlations(
 
     Returns strongest correlations found (absolute phi value > 0.1).
     """
-    token = await verify_api_key(authorization)
-
     try:
         time_threshold = datetime.now(timezone.utc) - timedelta(hours=hours)
 

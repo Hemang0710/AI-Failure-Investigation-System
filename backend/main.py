@@ -52,15 +52,16 @@ async def add_request_id(request: Request, call_next):
     return response
 
 
-# Include routers
+# Include routers. Every /api/v1 route requires a valid API key; only health is open.
+protected = [Depends(verify_api_key)]
 app.include_router(health.router)
-app.include_router(events.router, prefix="/api/v1", tags=["events"])
-app.include_router(failures.router, prefix="/api/v1", tags=["failures"])
-app.include_router(patterns.router, prefix="/api/v1", tags=["patterns"])
-app.include_router(models.router, prefix="/api/v1", tags=["models"])
-app.include_router(stats.router, prefix="/api/v1", tags=["stats"])
-app.include_router(correlations.router, prefix="/api/v1", tags=["correlations"])
-app.include_router(feedback.router, prefix="/api/v1", tags=["feedback"])
+app.include_router(events.router, prefix="/api/v1", tags=["events"], dependencies=protected)
+app.include_router(failures.router, prefix="/api/v1", tags=["failures"], dependencies=protected)
+app.include_router(patterns.router, prefix="/api/v1", tags=["patterns"], dependencies=protected)
+app.include_router(models.router, prefix="/api/v1", tags=["models"], dependencies=protected)
+app.include_router(stats.router, prefix="/api/v1", tags=["stats"], dependencies=protected)
+app.include_router(correlations.router, prefix="/api/v1", tags=["correlations"], dependencies=protected)
+app.include_router(feedback.router, prefix="/api/v1", tags=["feedback"], dependencies=protected)
 
 
 # Global exception handler

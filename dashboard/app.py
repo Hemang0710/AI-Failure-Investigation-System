@@ -58,7 +58,10 @@ st.markdown("""
 @st.cache_resource
 def get_investigator():
     """Get cached Investigator instance."""
-    api_key = os.getenv("FAILURE_INVESTIGATOR_API_KEY", "sk-demo-12345")
+    api_key = os.getenv("FAILURE_INVESTIGATOR_API_KEY")
+    if not api_key:
+        st.error("FAILURE_INVESTIGATOR_API_KEY is not set. Configure it in your environment or .env file.")
+        st.stop()
     endpoint = os.getenv("FAILURE_INVESTIGATOR_ENDPOINT", "http://localhost:8000")
     return FailureInvestigator(api_key=api_key, endpoint=endpoint)
 
@@ -437,7 +440,7 @@ def show_analysis(investigator):
         if st.button("🚀 Run Pattern Analysis Now"):
             # Trigger analysis endpoint
             endpoint = os.getenv("FAILURE_INVESTIGATOR_ENDPOINT", "http://localhost:8000")
-            api_key = os.getenv("FAILURE_INVESTIGATOR_API_KEY", "sk-demo-12345")
+            api_key = os.getenv("FAILURE_INVESTIGATOR_API_KEY", "")
             try:
                 r = requests.post(
                     f"{endpoint}/api/v1/events/trigger-analysis",
@@ -576,10 +579,11 @@ def show_settings():
 
     st.subheader("API Configuration")
     endpoint = os.getenv("FAILURE_INVESTIGATOR_ENDPOINT", "http://localhost:8000")
-    api_key = os.getenv("FAILURE_INVESTIGATOR_API_KEY", "sk-demo-12345")
+    api_key = os.getenv("FAILURE_INVESTIGATOR_API_KEY")
 
     st.text_input("API Endpoint", endpoint, disabled=True)
-    st.text_input("API Key", api_key, disabled=True, type="password")
+    # Never render the key itself - only whether it is configured
+    st.text_input("API Key", "configured" if api_key else "not set", disabled=True)
 
     st.markdown("---")
 

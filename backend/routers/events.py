@@ -1,6 +1,6 @@
 """Event ingestion endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Header, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import insert
 from datetime import datetime, timezone
@@ -10,7 +10,7 @@ import asyncio
 
 from database import get_db, AsyncSessionLocal
 from auth import verify_api_key
-from models import FailureEvent
+from models import FailureEvent, APIKey
 from schemas import BatchEventIngestion, EventIngestionResponse
 from services.pattern_engine import run_pattern_analysis
 
@@ -27,7 +27,7 @@ router = APIRouter()
 async def ingest_events(
     batch: BatchEventIngestion,
     request: Request,
-    authorization: str = Header(None),
+    api_key: APIKey = Depends(verify_api_key),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -39,9 +39,6 @@ async def ingest_events(
     For now, events are processed synchronously. In production,
     would queue for async processing.
     """
-    # Verify API key
-    token = await verify_api_key(authorization)
-
     batch_id = f"batch_{uuid.uuid4().hex[:8]}"
     request_id = getattr(request.state, "request_id", None)
 
@@ -53,7 +50,7 @@ async def ingest_events(
 
             event = FailureEvent(
                 event_id=event_id,
-                user_id=1,  # TODO: get from token/claims
+                user_id=api_key.user_id,
                 timestamp=event_data.timestamp,
                 model_name=event_data.model_name,
                 provider=event_data.provider,
@@ -148,7 +145,6 @@ async def ingest_events(
 )
 async def trigger_pattern_analysis(
     hours: int = Query(168, ge=1, le=720, description="Analyze events from last N hours"),
-    authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -156,8 +152,6 @@ async def trigger_pattern_analysis(
     Useful for ad-hoc analysis or dashboard-initiated re-analysis.
     Returns 202 Accepted - analysis runs in background.
     """
-    token = await verify_api_key(authorization)
-
     async def _trigger():
         async with AsyncSessionLocal() as analysis_db:
             result = await run_pattern_analysis(db=analysis_db, hours=hours, min_occurrences=3)

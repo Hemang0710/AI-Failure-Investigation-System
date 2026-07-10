@@ -1,13 +1,12 @@
 """Failure query and detail endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 from datetime import datetime, timedelta, timezone
 import logging
 
 from database import get_db
-from auth import verify_api_key
 from models import FailureEvent, FailureTypeEnum, SeverityEnum
 from schemas import FailuresQueryResponse, FailureEventResponse, FailureDetailResponse, PaginationInfo
 
@@ -32,7 +31,6 @@ async def get_failures(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     limit: int = Query(20, ge=1, le=100, description="Results per page"),
     sort: str = Query("-timestamp", description="Sort field"),
-    authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -50,9 +48,6 @@ async def get_failures(
 
     Sort options: timestamp, confidence_score, latency_ms
     """
-    # Verify API key
-    token = await verify_api_key(authorization)
-
     try:
         # Build filters
         filters = []
@@ -137,7 +132,6 @@ async def get_failures(
 )
 async def get_failure_detail(
     event_id: str,
-    authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -145,9 +139,6 @@ async def get_failure_detail(
 
     Includes all metadata, retrieval results, quality metrics, and feedback.
     """
-    # Verify API key
-    token = await verify_api_key(authorization)
-
     try:
         query = select(FailureEvent).where(FailureEvent.event_id == event_id)
         result = await db.execute(query)

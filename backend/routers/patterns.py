@@ -1,13 +1,12 @@
 """Pattern detection and analysis endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from datetime import datetime, timezone
 import logging
 
 from database import get_db
-from auth import verify_api_key
 from models import Pattern
 from schemas import PatternsQueryResponse, PatternResponse, PatternsSummary, PatternFeedbackCreate, PatternFeedbackResponse
 
@@ -25,7 +24,6 @@ async def get_patterns(
     type: str = Query(None, description="Filter by failure type"),
     limit: int = Query(20, ge=1, le=100, description="Results per page"),
     sort: str = Query("-occurrence_count", description="Sort field"),
-    authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -41,9 +39,6 @@ async def get_patterns(
 
     Sort options: occurrence_count, last_seen, severity
     """
-    # Verify API key
-    token = await verify_api_key(authorization)
-
     try:
         query = select(Pattern)
 
@@ -103,7 +98,6 @@ async def get_patterns(
 async def submit_pattern_feedback(
     pattern_id: str,
     feedback: PatternFeedbackCreate,
-    authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -111,9 +105,6 @@ async def submit_pattern_feedback(
 
     Used to track which pattern fixes actually work in production.
     """
-    # Verify API key
-    token = await verify_api_key(authorization)
-
     try:
         # Find pattern
         query = select(Pattern).where(Pattern.pattern_id == pattern_id)
