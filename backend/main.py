@@ -11,6 +11,7 @@ import uuid
 from database import init_db, get_db
 from routers import events, failures, patterns, models, stats, health, correlations, feedback
 from auth import verify_api_key
+from ratelimit import default_rate_limit
 
 
 # Database initialization
@@ -41,6 +42,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Request body size cap. Checks Content-Length only; a reverse proxy should
+# additionally enforce this for chunked requests in production.
+MAX_REQUEST_BYTES = int(os.getenv("MAX_REQUEST_BYTES", str(10 * 1024 * 1024)))
+
+
+@app.middleware("http")
+async def limit_request_size(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            too_large = int(content_length) > MAX_REQUEST_BYTES
+        except ValueError:
+            too_large = True
+        if too_large:
+            return JSONResponse(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                content={
+                    "error": {
+                        "code": "request_too_large",
+                        "message": f"Request body exceeds maximum of {MAX_REQUEST_BYTES} bytes",
+                        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    }
+                },
+            )
+    return await call_next(request)
+
 
 # Middleware for request ID tracking
 @app.middleware("http")
@@ -52,8 +79,10 @@ async def add_request_id(request: Request, call_next):
     return response
 
 
-# Include routers. Every /api/v1 route requires a valid API key; only health is open.
-protected = [Depends(verify_api_key)]
+# Include routers. Every /api/v1 route is rate limited and requires a valid
+# API key; only health is open. The rate limit runs first so floods of bad
+# credentials never reach the database.
+protected = [Depends(default_rate_limit), Depends(verify_api_key)]
 app.include_router(health.router)
 app.include_router(events.router, prefix="/api/v1", tags=["events"], dependencies=protected)
 app.include_router(failures.router, prefix="/api/v1", tags=["failures"], dependencies=protected)
@@ -77,6 +106,8 @@ async def http_exception_handler(request: Request, exc: HTTPException):
                 "request_id": getattr(request.state, "request_id", None),
             }
         },
+        # Preserve headers such as Retry-After (429) and WWW-Authenticate (401)
+        headers=getattr(exc, "headers", None),
     )
 
 

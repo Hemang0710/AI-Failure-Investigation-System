@@ -11,6 +11,7 @@ import asyncio
 from database import get_db, AsyncSessionLocal
 from auth import verify_api_key
 from models import FailureEvent, APIKey
+from ratelimit import ingest_rate_limit
 from schemas import BatchEventIngestion, EventIngestionResponse
 from services.pattern_engine import run_pattern_analysis
 
@@ -23,6 +24,8 @@ router = APIRouter()
     response_model=EventIngestionResponse,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Ingest failure events",
+    # Stricter than the router-wide default; ingestion is the expensive path
+    dependencies=[Depends(ingest_rate_limit)],
 )
 async def ingest_events(
     batch: BatchEventIngestion,

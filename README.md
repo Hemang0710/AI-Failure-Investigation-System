@@ -357,6 +357,14 @@ CORS_ORIGINS=http://localhost:3000,http://localhost:8501
 # Generate with: python -c "import secrets; print('sk-' + secrets.token_urlsafe(32))"
 BOOTSTRAP_API_KEY=your-generated-key
 
+# Rate limiting & payload caps (defaults shown; per API key, IP for unauthenticated)
+RATE_LIMIT_DEFAULT=120/minute
+RATE_LIMIT_INGEST=30/minute
+RATE_LIMIT_ENABLED=true
+# Point at Redis when running multiple backend instances
+RATE_LIMIT_STORAGE_URI=memory://
+MAX_REQUEST_BYTES=10485760
+
 # Environment
 ENV=development
 ```

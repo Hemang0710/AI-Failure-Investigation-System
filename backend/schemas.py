@@ -8,25 +8,30 @@ from models import FailureTypeEnum, SeverityEnum
 
 # ============ Event Ingestion ============
 
+# Upper bound for prompt/response text; keeps a single event from filling storage
+MAX_TEXT_LENGTH = 100_000
+MAX_METADATA_CHARS = 50_000
+
+
 class FailureEventCreate(BaseModel):
     """Event submission from SDK."""
     timestamp: datetime
-    model_name: str
-    provider: Optional[str] = None
-    prompt: str
-    response: str
-    response_length: Optional[int] = None
-    latency_ms: Optional[int] = None
+    model_name: str = Field(min_length=1, max_length=255)
+    provider: Optional[str] = Field(None, max_length=100)
+    prompt: str = Field(max_length=MAX_TEXT_LENGTH)
+    response: str = Field(max_length=MAX_TEXT_LENGTH)
+    response_length: Optional[int] = Field(None, ge=0)
+    latency_ms: Optional[int] = Field(None, ge=0)
     confidence_score: Optional[float] = Field(None, ge=0.0, le=1.0)
     failure_type: FailureTypeEnum
     failure_severity: Optional[SeverityEnum] = None
     retrieval_score: Optional[float] = Field(None, ge=0.0, le=1.0)
-    retrieval_results: Optional[List[str]] = None
+    retrieval_results: Optional[List[str]] = Field(None, max_length=100)
     context_relevance: Optional[float] = Field(None, ge=0.0, le=1.0)
-    environment: Optional[str] = "production"
-    session_id: Optional[str] = None
-    user_id: Optional[str] = None
-    tags: Optional[List[str]] = None
+    environment: Optional[str] = Field("production", max_length=100)
+    session_id: Optional[str] = Field(None, max_length=255)
+    user_id: Optional[str] = Field(None, max_length=255)
+    tags: Optional[List[str]] = Field(None, max_length=50)
     event_metadata: Optional[Dict[str, Any]] = None
 
     @field_validator("confidence_score", "retrieval_score", "context_relevance")
@@ -35,16 +40,26 @@ class FailureEventCreate(BaseModel):
             raise ValueError("Score must be between 0.0 and 1.0")
         return v
 
+    @field_validator("tags", "retrieval_results")
+    def validate_item_length(cls, v):
+        if v is not None and any(len(item) > 1000 for item in v):
+            raise ValueError("List items must be 1000 characters or fewer")
+        return v
+
+    @field_validator("event_metadata")
+    def validate_metadata_size(cls, v):
+        if v is not None:
+            import json
+            if len(json.dumps(v, default=str)) > MAX_METADATA_CHARS:
+                raise ValueError(
+                    f"event_metadata exceeds maximum of {MAX_METADATA_CHARS} characters when serialized"
+                )
+        return v
+
 
 class BatchEventIngestion(BaseModel):
     """Batch event submission."""
-    events: List[FailureEventCreate]
-
-    @field_validator("events")
-    def validate_batch_size(cls, v):
-        if len(v) > 1000:
-            raise ValueError("Batch size exceeds maximum of 1000 events")
-        return v
+    events: List[FailureEventCreate] = Field(min_length=1, max_length=1000)
 
 
 class EventIngestionResponse(BaseModel):
@@ -146,8 +161,8 @@ class PatternFeedbackCreate(BaseModel):
     """Feedback on pattern remediation."""
     remediation_tested: bool
     remediation_effectiveness: Optional[float] = Field(None, ge=0.0, le=1.0)
-    implementation_notes: Optional[str] = None
-    new_prompt_version_id: Optional[str] = None
+    implementation_notes: Optional[str] = Field(None, max_length=10_000)
+    new_prompt_version_id: Optional[str] = Field(None, max_length=255)
 
 
 class PatternFeedbackResponse(BaseModel):
@@ -162,11 +177,11 @@ class PatternFeedbackResponse(BaseModel):
 
 class UserFeedbackCreate(BaseModel):
     """User validation of failure classification."""
-    event_id: str
+    event_id: str = Field(min_length=1, max_length=255)
     is_actual_failure: bool
     corrected_failure_type: Optional[FailureTypeEnum] = None
-    notes: Optional[str] = None
-    user_id: Optional[str] = None
+    notes: Optional[str] = Field(None, max_length=10_000)
+    user_id: Optional[str] = Field(None, max_length=255)
 
 
 class UserFeedbackResponse(BaseModel):
