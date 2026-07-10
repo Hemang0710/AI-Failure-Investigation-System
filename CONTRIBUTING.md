@@ -51,9 +51,9 @@ Examples of unacceptable behavior include:
 Click the "Fork" button on GitHub to create your own copy.
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/ai-failure-investigation-system.git
-cd ai-failure-investigation-system
-git remote add upstream https://github.com/ORIGINAL-OWNER/ai-failure-investigation-system.git
+git clone https://github.com/YOUR-USERNAME/AI-Failure-Investigation-System.git
+cd AI-Failure-Investigation-System
+git remote add upstream https://github.com/Hemang0710/AI-Failure-Investigation-System.git
 ```
 
 ### 2. Create a Development Branch

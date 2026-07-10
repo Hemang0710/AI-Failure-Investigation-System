@@ -67,7 +67,10 @@ async def get_system_stats(
         failure_type_dist = {}
         for ftype, count in failure_type_rows:
             if ftype:
-                failure_type_dist[str(ftype)] = count
+                # ftype is a FailureTypeEnum member; use its value ("hallucination")
+                # rather than str() which yields "FailureTypeEnum.HALLUCINATION".
+                key = ftype.value if hasattr(ftype, "value") else str(ftype)
+                failure_type_dist[key] = count
 
         # Severity distribution
         severity_query = select(
