@@ -4,16 +4,57 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 import os
+import ssl
 from typing import AsyncGenerator
+from urllib.parse import parse_qsl, urlencode
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql+psycopg2://postgres:postgres@localhost:5432/ai_failures"
 )
 
-ASYNC_DATABASE_URL = os.getenv(
-    "ASYNC_DATABASE_URL",
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_failures"
+
+def _build_async_engine_url(raw: str):
+    """Normalize a database URL for the asyncpg driver and derive connect args.
+
+    Accepts URLs as pasted from managed providers (Neon, Supabase, Render):
+    coerces a bare ``postgres://``/``postgresql://`` URL to ``+asyncpg``, and
+    strips libpq-only query params (``sslmode``, ``channel_binding``) that
+    asyncpg rejects - translating an SSL requirement into an SSL context.
+
+    Only the query string is rewritten, so SQLite and other URLs pass through
+    untouched.
+    """
+    if raw.startswith("postgres://"):
+        raw = "postgresql://" + raw[len("postgres://"):]
+    if raw.startswith("postgresql://"):
+        raw = "postgresql+asyncpg://" + raw[len("postgresql://"):]
+
+    wants_ssl = os.getenv("DB_SSL", "").lower() in ("require", "true", "1")
+
+    if "asyncpg" in raw and "?" in raw:
+        base, _, query_string = raw.partition("?")
+        kept = []
+        for key, value in parse_qsl(query_string):
+            if key == "sslmode":
+                wants_ssl = wants_ssl or value in ("require", "verify-ca", "verify-full")
+            elif key == "channel_binding":
+                continue  # asyncpg negotiates this itself; the param would error
+            else:
+                kept.append((key, value))
+        raw = base + (f"?{urlencode(kept)}" if kept else "")
+
+    connect_args = {}
+    if wants_ssl and "asyncpg" in raw:
+        connect_args["ssl"] = ssl.create_default_context()
+    return raw, connect_args
+
+
+ASYNC_DATABASE_URL, _CONNECT_ARGS = _build_async_engine_url(
+    os.getenv(
+        "ASYNC_DATABASE_URL",
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_failures",
+    )
 )
 
 Base = declarative_base()
@@ -23,6 +64,7 @@ engine = create_async_engine(
     echo=os.getenv("SQL_ECHO", "false").lower() == "true",
     future=True,
     pool_pre_ping=True,
+    connect_args=_CONNECT_ARGS,
 )
 
 AsyncSessionLocal = sessionmaker(

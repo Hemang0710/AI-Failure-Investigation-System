@@ -1,0 +1,7 @@
+# Dashboard dependencies (Streamlit Community Cloud reads this file).
+# The dashboard imports the local sdk/ package, which needs httpx.
+streamlit>=1.30
+pandas>=2.2.0
+numpy>=1.26.2
+requests>=2.31.0
+httpx>=0.25.2

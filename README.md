@@ -16,6 +16,7 @@ An enterprise-grade observability platform for monitoring, analyzing, and diagno
 - [Dashboard](#dashboard)
 - [Architecture](#architecture)
 - [Quick Start](#quick-start)
+- [Deploy Your Own](#deploy-your-own)
 - [Project Structure](#project-structure)
 - [API Documentation](#api-documentation)
 - [Dashboard Features](#dashboard-features)
@@ -187,6 +188,23 @@ pip install streamlit pandas httpx
 # Start dashboard
 streamlit run app.py
 ```
+
+---
+
+## ☁️ Deploy Your Own
+
+Host the full stack for free across three services — **Neon** (Postgres),
+**Render** (API), and **Streamlit Community Cloud** (dashboard).
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Hemang0710/AI-Failure-Investigation-System)
+
+The button reads [`render.yaml`](render.yaml) and provisions the backend; you
+supply a Neon database URL and Render generates the API key. Full walkthrough,
+including the dashboard and demo-data seeding, is in
+**[docs/DEPLOY.md](docs/DEPLOY.md)**.
+
+> Free tiers mean cold starts and small storage — great for a demo, not for
+> production SLAs.
 
 ---
 

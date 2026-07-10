@@ -1,0 +1,30 @@
+# Render Blueprint for the FastAPI backend.
+# Deploy: https://render.com/deploy?repo=https://github.com/Hemang0710/AI-Failure-Investigation-System
+#
+# The dashboard runs separately on Streamlit Community Cloud and the database on
+# Neon (or any managed Postgres) - see docs/DEPLOY.md.
+services:
+  - type: web
+    name: aifis-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      # Managed Postgres connection string (Neon/Supabase). Paste it as-is;
+      # the app coerces it to asyncpg and enables SSL.
+      - key: ASYNC_DATABASE_URL
+        sync: false
+      - key: DB_SSL
+        value: require
+      # API key clients authenticate with. Render generates a strong value;
+      # copy it into the dashboard's Streamlit secrets.
+      - key: BOOTSTRAP_API_KEY
+        generateValue: true
+      # Restrict to your dashboard origin in production if desired.
+      - key: CORS_ORIGINS
+        value: "*"
