@@ -2,9 +2,10 @@
 
 import httpx
 import logging
+import random
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from functools import wraps
 
@@ -86,6 +87,67 @@ class FailureInvestigator:
         except Exception as e:
             logger.error(f"Failed to report failure: {str(e)}")
             return False
+
+    def report_success(
+        self,
+        model_name: str,
+        task_type: Optional[str] = None,
+        provider: Optional[str] = None,
+        latency_ms: Optional[int] = None,
+        input_tokens: Optional[int] = None,
+        output_tokens: Optional[int] = None,
+        cost_usd: Optional[float] = None,
+        sample_rate: float = 1.0,
+        **extra: Any,
+    ) -> bool:
+        """
+        Report a successful LLM call (an event with no failure_type).
+
+        Success events are what make per-model and per-task success rates
+        trustworthy - without them the system only sees failures. On
+        high-volume paths, pass sample_rate (e.g. 0.1 to record 1 in 10);
+        note that sampled success counts understate true volume by that
+        factor, so keep the rate consistent per model/task when comparing.
+
+        Args:
+            model_name: Model that served the call
+            task_type: Task category (summarization, code_generation,
+                extraction, rag_qa, classification, translation, agentic,
+                creative_writing, chat, other)
+            provider: Provider name (openai, anthropic, ...)
+            latency_ms: Call latency
+            input_tokens / output_tokens: Token counts; the backend estimates
+                cost_usd from these when cost_usd is not given
+            cost_usd: Exact cost if known
+            sample_rate: Probability of recording this event (0.0-1.0]
+            **extra: Any other event fields (session_id, tags, prompt, ...)
+
+        Returns:
+            True unless buffering failed (a sampled-out event returns True)
+        """
+        if sample_rate < 1.0 and random.random() > sample_rate:
+            return True
+
+        event = {
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "model_name": model_name,
+            "prompt": "",
+            "response": "",
+            **extra,
+        }
+        for key, value in (
+            ("task_type", task_type),
+            ("provider", provider),
+            ("latency_ms", latency_ms),
+            ("input_tokens", input_tokens),
+            ("output_tokens", output_tokens),
+            ("cost_usd", cost_usd),
+        ):
+            if value is not None:
+                event[key] = value
+        event.pop("failure_type", None)  # success is defined by its absence
+
+        return self.report_failure(event)
 
     def report_failures(self, events: List[Dict[str, Any]]) -> bool:
         """
@@ -254,6 +316,40 @@ class FailureInvestigator:
             logger.error(f"Failed to query patterns: {str(e)}")
             return None
 
+    def export_pattern(
+        self,
+        pattern_id: str,
+        limit: int = 500,
+        hours: int = 720,
+    ) -> Optional[str]:
+        """
+        Export a pattern's failing events as JSONL (one event per line).
+
+        The result is ready to use as a regression eval set when testing a
+        remediation or evaluating a different model on the prompts that
+        actually failed.
+
+        Args:
+            pattern_id: Pattern ID (pat_xxx)
+            limit: Max events to export (default 500)
+            hours: Look back N hours (default 720)
+
+        Returns:
+            JSONL text, or None on error
+        """
+        try:
+            response = self.client.get(
+                f"{self.endpoint}/api/v1/patterns/{pattern_id}/export",
+                params={"limit": limit, "hours": hours},
+            )
+            response.raise_for_status()
+
+            return response.text
+
+        except Exception as e:
+            logger.error(f"Failed to export pattern {pattern_id}: {str(e)}")
+            return None
+
     def get_stats(self, hours: int = 24) -> Optional[Dict[str, Any]]:
         """
         Get system-wide statistics.
@@ -298,6 +394,44 @@ class FailureInvestigator:
 
         except Exception as e:
             logger.error(f"Failed to query model stats: {str(e)}")
+            return None
+
+    def get_recommendations(
+        self,
+        task_type: Optional[str] = None,
+        hours: int = 720,
+        min_events: int = 20,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get per-task model rankings (which model fits which task).
+
+        Rankings reflect observed reliability on your own workload: failure
+        rate first, then cost per call, then latency. Only events ingested
+        with a task_type participate.
+
+        Args:
+            task_type: Limit to one task type (default: all)
+            hours: Look back N hours (default 720 = 30 days)
+            min_events: Events required before a model can be recommended
+
+        Returns:
+            Response dict with ranked models per task, or None on error
+        """
+        try:
+            params: Dict[str, Any] = {"hours": hours, "min_events": min_events}
+            if task_type:
+                params["task_type"] = task_type
+
+            response = self.client.get(
+                f"{self.endpoint}/api/v1/recommendations",
+                params=params,
+            )
+            response.raise_for_status()
+
+            return response.json()
+
+        except Exception as e:
+            logger.error(f"Failed to query recommendations: {str(e)}")
             return None
 
     def get_correlations(
@@ -372,6 +506,44 @@ class FailureInvestigator:
         except Exception as e:
             logger.error(f"Failed to submit feedback: {str(e)}")
             return None
+
+    def compare_models(
+        self,
+        primary_model: str,
+        candidate_model: str,
+        task_type: Optional[str] = None,
+        sample_rate: float = 0.1,
+        **kwargs: Any,
+    ):
+        """
+        Create a shadow A/B comparison between two models.
+
+        The primary model serves every request; a sampled fraction is also
+        sent to the candidate in shadow mode. Both outcomes are reported on
+        identical prompts, which is the strongest evidence for "model X is
+        better at task Y". See sdk.comparison.ShadowComparison for details.
+
+        Args:
+            primary_model: Model serving live traffic
+            candidate_model: Model to evaluate in shadow
+            task_type: Task category attached to every event
+            sample_rate: Fraction of calls that also run the candidate
+            **kwargs: Forwarded to ShadowComparison (classify, comparison_id,
+                primary_provider, candidate_provider)
+
+        Returns:
+            ShadowComparison instance
+        """
+        from .comparison import ShadowComparison
+
+        return ShadowComparison(
+            investigator=self,
+            primary_model=primary_model,
+            candidate_model=candidate_model,
+            task_type=task_type,
+            sample_rate=sample_rate,
+            **kwargs,
+        )
 
     def track(self):
         """

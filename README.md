@@ -32,12 +32,18 @@ An enterprise-grade observability platform for monitoring, analyzing, and diagno
 ### Core Capabilities
 
 - **Failure Tracking** — Capture and categorize LLM failures (hallucinations, empty responses, timeouts)
+- **Success Tracking** — Report (a sample of) successful calls so success rates reflect real traffic, not just failures
+- **Model Fit Recommendations** — Rank models per task type (summarization, code generation, RAG QA, …) by observed reliability, cost, and latency: *which model is good for which task, on your workload*
+- **Cost Tracking** — Per-call cost from token counts (estimated from a built-in pricing table) or exact values you supply
 - **Pattern Detection** — Automatically identify clusters of similar failures
 - **Correlation Analysis** — Discover what factors cause failures (prompt length, model version, latency)
-- **Performance Metrics** — Per-model statistics (success rate, latency, failure distribution)
+- **Performance Metrics** — Per-model statistics (success rate, latency, cost, failure distribution)
+- **Alerting** — Slack or generic webhook notifications on new failure patterns and per-model failure-rate spikes
 - **Real-time Dashboard** — Visual analytics with interactive filtering and exploration
 - **REST API** — Programmatic access for integration with existing systems
 - **Python SDK** — Simple library for instrumenting LLM applications
+- **Shadow A/B Comparison** — Run a candidate model on a sample of live prompts and compare it against your primary model on identical traffic
+- **Eval-Set Export** — Turn any failure pattern into a JSONL regression set with one click
 
 ### Supported Failure Types
 
@@ -50,6 +56,14 @@ An enterprise-grade observability platform for monitoring, analyzing, and diagno
 - `retrieval_failure` — RAG retrieval returned poor or no context
 - `rate_limited` — Provider rate limit hit
 - `token_limit` — Context or output token limit exceeded
+
+An event submitted **without** a `failure_type` records a *successful* call — reporting successes (or a consistent sample of them via `sample_rate` in the SDK) is what makes failure rates and model recommendations trustworthy.
+
+### Task Types
+
+Tag events with a `task_type` to unlock the **Model Fit** view and `/recommendations` endpoint:
+
+`summarization` · `code_generation` · `extraction` · `rag_qa` · `classification` · `translation` · `agentic` · `creative_writing` · `chat` · `other`
 
 ### Severity Levels
 
@@ -283,8 +297,10 @@ the startup logs.
 | **GET** | `/failures` | Query failures with filters |
 | **GET** | `/failures/{id}` | Get failure details |
 | **GET** | `/patterns` | List detected patterns |
+| **GET** | `/patterns/{id}/export` | Download a pattern's failing prompts as a JSONL eval set |
 | **POST** | `/patterns/{id}/feedback` | Submit pattern feedback |
 | **GET** | `/models` | Model performance statistics |
+| **GET** | `/recommendations` | Rank models per task type (reliability → cost → latency) |
 | **GET** | `/correlations` | Factor correlation analysis |
 | **POST** | `/feedback` | Submit user feedback |
 | **POST** | `/events/trigger-analysis` | Trigger pattern analysis |
@@ -307,10 +323,24 @@ curl -X POST http://localhost:8000/api/v1/events \
       "confidence_score": 0.3,
       "failure_type": "hallucination",
       "failure_severity": "high",
+      "task_type": "rag_qa",
+      "input_tokens": 1200,
+      "output_tokens": 42,
       "latency_ms": 245
     }]
   }'
 ```
+
+Omit `failure_type` to record a successful call. When `input_tokens`/`output_tokens` are present and `cost_usd` is not, the per-call cost is estimated from a built-in pricing table (override with `MODEL_PRICING_JSON`).
+
+### Example: Which Model for Which Task
+
+```bash
+curl "http://localhost:8000/api/v1/recommendations?task_type=rag_qa&hours=720" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+Returns models ranked by observed failure rate (ties broken by cost per call, then latency), a `recommended_model` per task, and caveats when the sample is too small (`min_events`, default 20). Rankings reflect **your production traffic**, not benchmarks.
 
 ### Interactive API Docs
 
@@ -337,6 +367,7 @@ Visit: **http://localhost:8000/docs** for Swagger UI with interactive examples
 - Pattern frequency and confidence
 - Affected models and failure types
 - Remediation suggestions
+- One-click JSONL eval-set export of a pattern's failing prompts
 
 ### 4. **Models**
 - Per-model performance statistics
@@ -344,19 +375,25 @@ Visit: **http://localhost:8000/docs** for Swagger UI with interactive examples
 - Average latency
 - Failure type breakdown by model
 
-### 5. **Analysis**
+### 5. **Model Fit**
+- Which model is good at which task, from observed traffic
+- Success-rate matrix (task × model) with sample-size caveats
+- Cost vs reliability scatter (cheap *and* reliable wins)
+- Per-task ranked drill-down with recommended model
+
+### 6. **Analysis**
 - Failure heatmap (time × models)
 - Identify hot spots and spikes
 - Time range selection
 - Export capabilities
 
-### 6. **Correlations**
+### 7. **Correlations**
 - Factor correlation matrix
 - Identify root causes
 - Actionable insights
 - Correlation strength visualization
 
-### 7. **Settings**
+### 8. **Settings**
 - API configuration
 - Connection status
 - API key management
@@ -399,8 +436,10 @@ dashboard, patterns, and correlations views have something to show:
 
 ```bash
 export FAILURE_INVESTIGATOR_API_KEY=sk-...   # your API key
-python scripts/seed_demo.py --events 250 --days 7
+python scripts/seed_demo.py --events 2000 --days 7
 ```
+
+Seeded traffic is mostly successes with per-(model, task) failure profiles, so the Model Fit page shows meaningful rankings out of the box.
 
 ### Environment Variables
 
@@ -436,6 +475,18 @@ PII_REDACTION_TYPES=email,credit_card,ssn,phone,ip,api_key
 # Data retention (off by default) - delete events older than N days (0 = forever)
 DATA_RETENTION_DAYS=0
 RETENTION_SWEEP_INTERVAL_HOURS=24
+
+# Cost estimation - extend/override the built-in per-model pricing table
+# (USD per 1M tokens, [input, output]); matched by longest model-name prefix
+# MODEL_PRICING_JSON={"my-finetune": [1.0, 3.0]}
+
+# Alerting (off by default) - webhook notified on new failure patterns and
+# failure-rate spikes; Slack URLs get Slack formatting, others get JSON
+# ALERT_WEBHOOK_URL=https://hooks.slack.com/services/T000/B000/XXXX
+# ALERT_COOLDOWN_MINUTES=60
+# ALERT_FAILURE_RATE_THRESHOLD=0.25
+# ALERT_MIN_EVENTS=20
+# ALERT_WINDOW_HOURS=1
 
 # Environment
 ENV=development
@@ -490,9 +541,14 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 🗺️ Roadmap
 
+- [x] Slack/webhook alerting (new patterns, failure-rate spikes)
+- [x] Task-aware model recommendations (Model Fit)
+- [x] Per-call cost tracking
+- [x] Shadow A/B model comparison
+- [x] Pattern → JSONL eval-set export
 - [ ] Multi-tenant support
 - [ ] Advanced ML-based root cause analysis
-- [ ] Slack/Email alerting
+- [ ] Email alerting
 - [ ] Custom dashboard widgets
 - [ ] Performance optimization for large-scale deployments
 - [ ] Export to data warehouses

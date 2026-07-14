@@ -1,13 +1,15 @@
 """Pattern detection and analysis endpoints."""
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from datetime import datetime, timezone
+from sqlalchemy import select, func, and_
+from datetime import datetime, timedelta, timezone
+import json
 import logging
 
 from database import get_db
-from models import Pattern
+from models import Pattern, FailureEvent
 from schemas import PatternsQueryResponse, PatternResponse, PatternsSummary, PatternFeedbackCreate, PatternFeedbackResponse
 
 logger = logging.getLogger(__name__)
@@ -86,6 +88,89 @@ async def get_patterns(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to query patterns",
+        )
+
+
+@router.get(
+    "/patterns/{pattern_id}/export",
+    summary="Export a pattern's failing events as a JSONL eval set",
+    response_class=Response,
+)
+async def export_pattern_events(
+    pattern_id: str,
+    limit: int = Query(500, ge=1, le=5000, description="Max events to export"),
+    hours: int = Query(720, ge=1, le=8760, description="Look back N hours"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Download the prompts that hit this pattern as JSON Lines - one failing
+    event per line - ready to use as a regression eval set when trying a
+    fix or a different model.
+
+    Events are matched by the pattern's (failure_type, model_name) signature,
+    newest first.
+    """
+    try:
+        pattern = (await db.execute(
+            select(Pattern).where(Pattern.pattern_id == pattern_id)
+        )).scalar_one_or_none()
+
+        if not pattern:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Pattern {pattern_id} not found",
+            )
+
+        time_threshold = datetime.now(timezone.utc) - timedelta(hours=hours)
+        conditions = [
+            FailureEvent.failure_type == pattern.failure_type,
+            FailureEvent.timestamp >= time_threshold,
+        ]
+        if pattern.model_name:
+            conditions.append(FailureEvent.model_name == pattern.model_name)
+
+        events = (await db.execute(
+            select(FailureEvent)
+            .where(and_(*conditions))
+            .order_by(FailureEvent.timestamp.desc())
+            .limit(limit)
+        )).scalars().all()
+
+        lines = []
+        for e in events:
+            failure_type = e.failure_type.value if hasattr(e.failure_type, "value") else str(e.failure_type)
+            severity = e.failure_severity.value if hasattr(e.failure_severity, "value") else e.failure_severity
+            lines.append(json.dumps({
+                "event_id": e.event_id,
+                "timestamp": e.timestamp.isoformat() if e.timestamp else None,
+                "model_name": e.model_name,
+                "provider": e.provider,
+                "task_type": e.task_type,
+                "prompt": e.prompt,
+                "response": e.response,
+                "failure_type": failure_type,
+                "failure_severity": severity,
+                "confidence_score": e.confidence_score,
+                "retrieval_score": e.retrieval_score,
+                "latency_ms": e.latency_ms,
+            }, ensure_ascii=False))
+
+        return Response(
+            content="\n".join(lines) + ("\n" if lines else ""),
+            media_type="application/x-ndjson",
+            headers={
+                "Content-Disposition": f'attachment; filename="{pattern_id}.jsonl"',
+                "X-Event-Count": str(len(lines)),
+            },
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error exporting pattern events: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to export pattern events",
         )
 
 

@@ -87,7 +87,7 @@ def main():
     st.sidebar.title("📊 Navigation")
     page = st.sidebar.radio(
         "Select page",
-        ["Overview", "Failures", "Patterns", "Models", "Analysis", "Correlations", "Settings"],
+        ["Overview", "Failures", "Patterns", "Models", "Model Fit", "Analysis", "Correlations", "Settings"],
         label_visibility="collapsed",
     )
 
@@ -100,6 +100,8 @@ def main():
         show_patterns(investigator)
     elif page == "Models":
         show_models(investigator)
+    elif page == "Model Fit":
+        show_model_fit(investigator)
     elif page == "Analysis":
         show_analysis(investigator)
     elif page == "Correlations":
@@ -360,6 +362,24 @@ def show_patterns(investigator):
                     st.caption(
                         f"First: {pattern['first_seen'][:10]} | Last: {pattern['last_seen'][:10]}"
                     )
+
+                    # Eval-set export: prepare on demand, then offer download
+                    export_key = f"export_{pattern['pattern_id']}"
+                    if st.button("📦 Prepare eval set (JSONL)", key=f"btn_{export_key}"):
+                        jsonl = investigator.export_pattern(pattern['pattern_id'])
+                        if jsonl:
+                            st.session_state[export_key] = jsonl
+                        else:
+                            st.error("Export failed")
+                    if export_key in st.session_state:
+                        data = st.session_state[export_key]
+                        st.download_button(
+                            f"⬇️ Download {pattern['pattern_id']}.jsonl ({len(data.splitlines())} events)",
+                            data=data,
+                            file_name=f"{pattern['pattern_id']}.jsonl",
+                            mime="application/x-ndjson",
+                            key=f"dl_{export_key}",
+                        )
     else:
         st.error("Failed to load patterns.")
 
@@ -429,6 +449,121 @@ def show_models(investigator):
     ]
     display_df['Rate'] = display_df['Rate'].apply(lambda x: f"{x:.2%}")
     st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+
+def show_model_fit(investigator):
+    """Which model is good at which task, based on observed events."""
+    st.header("🎯 Model Fit: Which Model for Which Task")
+
+    st.markdown(
+        "Rankings below come from **your observed traffic**, not benchmarks: "
+        "models are ranked per task by failure rate, ties broken by cost per "
+        "call, then latency. Only events ingested with a `task_type` participate."
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        hours = st.slider("Time range (hours)", 24, 2160, 720, key="fit_hours")
+    with col2:
+        min_events = st.number_input(
+            "Min events to recommend a model", min_value=1, max_value=10000, value=20,
+            help="Models with fewer events for a task are shown but never recommended.",
+        )
+
+    data = investigator.get_recommendations(hours=hours, min_events=int(min_events))
+
+    if data is None:
+        st.error("Failed to load recommendations. Check API connection.")
+        return
+
+    tasks = data.get("tasks", [])
+    if not tasks:
+        st.info(
+            "No task-tagged events yet. Pass `task_type` when reporting events "
+            "(e.g. `summarization`, `code_generation`, `rag_qa`) to populate this view."
+        )
+        return
+
+    # ---- Recommendations at a glance ----
+    st.subheader("Recommended Model per Task")
+    rec_rows = []
+    for task in tasks:
+        rec_rows.append({
+            "Task": task["task_type"],
+            "Recommended": f"🏆 {task['recommended_model']}" if task["recommended_model"] else "— not enough data",
+            "Events": task["total_events"],
+            "Models Compared": len(task["ranked_models"]),
+        })
+    st.dataframe(pd.DataFrame(rec_rows), use_container_width=True, hide_index=True)
+
+    for task in tasks:
+        if task.get("caveat"):
+            st.caption(f"⚠️ **{task['task_type']}**: {task['caveat']}")
+
+    # ---- Success-rate matrix ----
+    st.subheader("Success Rate: Task × Model")
+    matrix_rows = []
+    for task in tasks:
+        for m in task["ranked_models"]:
+            matrix_rows.append({
+                "task_type": task["task_type"],
+                "model_name": m["model_name"],
+                "success_rate": m["success_rate"],
+                "total_events": m["total_events"],
+                "failure_rate": m["failure_rate"],
+                "average_cost_usd": m["average_cost_usd"],
+                "average_latency_ms": m["average_latency_ms"],
+            })
+    matrix_df = pd.DataFrame(matrix_rows)
+
+    pivot = matrix_df.pivot_table(
+        index="task_type", columns="model_name", values="success_rate"
+    )
+    st.dataframe(
+        pivot.style.format("{:.1%}", na_rep="—").background_gradient(
+            cmap="RdYlGn", axis=None, vmin=0.5, vmax=1.0
+        ),
+        use_container_width=True,
+    )
+    st.caption("Cells are success rates over the selected window; blank cells mean no traffic for that pair.")
+
+    # ---- Cost vs reliability ----
+    cost_df = matrix_df[matrix_df["average_cost_usd"].notna()]
+    if not cost_df.empty:
+        st.subheader("Cost vs Reliability")
+        st.markdown("Bottom-left is best: cheap **and** reliable. Point size = event volume.")
+        scatter_df = cost_df.rename(columns={
+            "average_cost_usd": "Avg cost per call (USD)",
+            "failure_rate": "Failure rate",
+        })
+        st.scatter_chart(
+            scatter_df,
+            x="Avg cost per call (USD)",
+            y="Failure rate",
+            color="model_name",
+            size="total_events",
+        )
+
+    # ---- Per-task drill-down ----
+    st.subheader("Task Drill-Down")
+    task_names = [t["task_type"] for t in tasks]
+    selected = st.selectbox("Task type", task_names)
+    task = next(t for t in tasks if t["task_type"] == selected)
+
+    detail_rows = []
+    for rank, m in enumerate(task["ranked_models"], start=1):
+        detail_rows.append({
+            "Rank": f"🏆 {rank}" if m["model_name"] == task["recommended_model"] else str(rank),
+            "Model": m["model_name"],
+            "Provider": m["provider"] or "—",
+            "Events": m["total_events"],
+            "Success Rate": f"{m['success_rate']:.1%}",
+            "Top Failure": m["top_failure_type"] or "—",
+            "Avg Latency (ms)": f"{m['average_latency_ms']:.0f}" if m["average_latency_ms"] is not None else "—",
+            "Avg Cost / Call": f"${m['average_cost_usd']:.5f}" if m["average_cost_usd"] is not None else "—",
+            "Enough Data": "✓" if m["sample_sufficient"] else f"needs {data['min_events']}+",
+        })
+    st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
 
 def show_analysis(investigator):

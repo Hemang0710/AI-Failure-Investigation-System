@@ -1,6 +1,6 @@
 """Database connection and session management."""
 
-from sqlalchemy import select
+from sqlalchemy import select, text, inspect
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 import os
@@ -85,10 +85,44 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
+# Columns added after the first release. create_all only creates missing
+# tables, never missing columns, so databases created by an older version
+# are upgraded additively here (idempotent, no data touched).
+_FAILURE_EVENT_UPGRADES = {
+    "task_type": "VARCHAR(50)",
+    "input_tokens": "INTEGER",
+    "output_tokens": "INTEGER",
+    "cost_usd": "FLOAT",
+}
+
+
+def _upgrade_schema(sync_conn):
+    inspector = inspect(sync_conn)
+    if "failure_events" not in inspector.get_table_names():
+        return
+
+    existing = {col["name"] for col in inspector.get_columns("failure_events")}
+    for name, ddl_type in _FAILURE_EVENT_UPGRADES.items():
+        if name not in existing:
+            sync_conn.execute(
+                text(f"ALTER TABLE failure_events ADD COLUMN {name} {ddl_type}")
+            )
+
+    # Success events carry no failure_type; deployments created before
+    # success tracking have a NOT NULL constraint to drop. SQLite cannot
+    # drop NOT NULL in place, but SQLite databases are dev/test and are
+    # recreated with the current (nullable) schema anyway.
+    if sync_conn.dialect.name == "postgresql":
+        sync_conn.execute(
+            text("ALTER TABLE failure_events ALTER COLUMN failure_type DROP NOT NULL")
+        )
+
+
 async def init_db():
     """Initialize database tables and seed the default user and API key."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_upgrade_schema)
 
     # Deferred imports: models/auth depend on Base defined above
     from models import User, APIKey

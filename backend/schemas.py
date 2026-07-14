@@ -3,7 +3,7 @@
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from models import FailureTypeEnum, SeverityEnum
+from models import FailureTypeEnum, SeverityEnum, TaskTypeEnum
 
 
 # ============ Event Ingestion ============
@@ -14,7 +14,12 @@ MAX_METADATA_CHARS = 50_000
 
 
 class FailureEventCreate(BaseModel):
-    """Event submission from SDK."""
+    """Event submission from SDK.
+
+    ``failure_type`` is optional: an event without one records a *successful*
+    call. Reporting (a sample of) successes is what makes per-model and
+    per-task success rates trustworthy rather than failure-only counts.
+    """
     timestamp: datetime
     model_name: str = Field(min_length=1, max_length=255)
     provider: Optional[str] = Field(None, max_length=100)
@@ -23,8 +28,12 @@ class FailureEventCreate(BaseModel):
     response_length: Optional[int] = Field(None, ge=0)
     latency_ms: Optional[int] = Field(None, ge=0)
     confidence_score: Optional[float] = Field(None, ge=0.0, le=1.0)
-    failure_type: FailureTypeEnum
+    failure_type: Optional[FailureTypeEnum] = None
     failure_severity: Optional[SeverityEnum] = None
+    task_type: Optional[TaskTypeEnum] = None
+    input_tokens: Optional[int] = Field(None, ge=0)
+    output_tokens: Optional[int] = Field(None, ge=0)
+    cost_usd: Optional[float] = Field(None, ge=0.0)
     retrieval_score: Optional[float] = Field(None, ge=0.0, le=1.0)
     retrieval_results: Optional[List[str]] = Field(None, max_length=100)
     context_relevance: Optional[float] = Field(None, ge=0.0, le=1.0)
@@ -79,13 +88,16 @@ class FailureEventResponse(BaseModel):
     model_name: str
     failure_type: FailureTypeEnum
     failure_severity: Optional[SeverityEnum]
-    prompt: str
-    response: str
+    # Nullable in the DB (rows can be created outside the API), so the
+    # response must tolerate missing text rather than 500 on the whole page.
+    prompt: Optional[str]
+    response: Optional[str]
     confidence_score: Optional[float]
     retrieval_score: Optional[float]
     latency_ms: Optional[int]
     user_id: Optional[int]
     environment: Optional[str]
+    task_type: Optional[TaskTypeEnum] = None
 
     class Config:
         from_attributes = True
@@ -97,6 +109,9 @@ class FailureDetailResponse(FailureEventResponse):
     provider: Optional[str]
     system_instructions: Optional[str]
     response_length: Optional[int]
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    cost_usd: Optional[float] = None
     retrieval_results: Optional[List[str]]
     context_relevance: Optional[float]
     semantic_coherence: Optional[float]
@@ -204,6 +219,8 @@ class ModelStats(BaseModel):
     average_latency_ms: Optional[float]
     distinct_failure_types: int
     severity_breakdown: Dict[str, int]
+    average_cost_usd: Optional[float] = None
+    total_cost_usd: Optional[float] = None
 
     class Config:
         from_attributes = True
@@ -220,6 +237,42 @@ class ModelsQueryResponse(BaseModel):
     """Response to model performance query."""
     models: List[ModelStats]
     period: TimePeriod
+
+
+# ============ Model Recommendations (task fit) ============
+
+class TaskModelStats(BaseModel):
+    """How one model performs on one task type."""
+    model_name: str
+    provider: Optional[str]
+    total_events: int
+    failure_count: int
+    failure_rate: float
+    success_rate: float
+    average_latency_ms: Optional[float]
+    average_cost_usd: Optional[float]
+    top_failure_type: Optional[str]
+    sample_sufficient: bool
+
+
+class TaskRecommendation(BaseModel):
+    """Ranked model list for one task type."""
+    task_type: TaskTypeEnum
+    total_events: int
+    ranked_models: List[TaskModelStats]
+    recommended_model: Optional[str]
+    caveat: Optional[str]
+
+
+class RecommendationsResponse(BaseModel):
+    """Response to model recommendation query.
+
+    Rankings reflect *observed reliability on this workload*, not benchmark
+    scores; the caveats matter when samples are small.
+    """
+    period: TimePeriod
+    min_events: int
+    tasks: List[TaskRecommendation]
 
 
 # ============ System Statistics ============

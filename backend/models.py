@@ -29,6 +29,25 @@ class SeverityEnum(str, enum.Enum):
     LOW = "low"
 
 
+class TaskTypeEnum(str, enum.Enum):
+    """What kind of work the LLM call was doing.
+
+    Stored as a plain string column (not a native DB enum) so new task types
+    can be added without a schema migration; this enum is the validated
+    vocabulary at the API boundary.
+    """
+    SUMMARIZATION = "summarization"
+    CODE_GENERATION = "code_generation"
+    EXTRACTION = "extraction"
+    RAG_QA = "rag_qa"
+    CLASSIFICATION = "classification"
+    TRANSLATION = "translation"
+    AGENTIC = "agentic"
+    CREATIVE_WRITING = "creative_writing"
+    CHAT = "chat"
+    OTHER = "other"
+
+
 class User(Base):
     """User account for API access."""
     __tablename__ = "users"
@@ -84,9 +103,16 @@ class FailureEvent(Base):
     response_length = Column(Integer)
     confidence_score = Column(Float)
 
-    # Failure Classification
-    failure_type = Column(Enum(FailureTypeEnum), nullable=False, index=True)
+    # Failure Classification. NULL failure_type means the call succeeded;
+    # success events are what make per-task success rates trustworthy.
+    failure_type = Column(Enum(FailureTypeEnum), nullable=True, index=True)
     failure_severity = Column(Enum(SeverityEnum), index=True)
+
+    # Task & Cost (validated vocabulary: TaskTypeEnum)
+    task_type = Column(String(50), nullable=True, index=True)
+    input_tokens = Column(Integer, nullable=True)
+    output_tokens = Column(Integer, nullable=True)
+    cost_usd = Column(Float, nullable=True)
 
     # Retrieval Metrics
     retrieval_score = Column(Float, nullable=True)
@@ -117,6 +143,7 @@ class FailureEvent(Base):
         Index("ix_timestamp_model", timestamp, model_name),
         Index("ix_timestamp_type", timestamp, failure_type),
         Index("ix_session_user", session_id, user_id),
+        Index("ix_task_model", task_type, model_name),
     )
 
 

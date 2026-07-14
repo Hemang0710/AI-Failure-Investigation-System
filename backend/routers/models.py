@@ -46,6 +46,8 @@ async def get_model_stats(
             func.avg(FailureEvent.confidence_score).label("avg_confidence"),
             func.avg(FailureEvent.latency_ms).label("avg_latency"),
             func.count(func.distinct(FailureEvent.failure_type)).label("distinct_types"),
+            func.avg(FailureEvent.cost_usd).label("avg_cost"),
+            func.sum(FailureEvent.cost_usd).label("total_cost"),
             func.sum(
                 case((FailureEvent.failure_severity == "critical", 1), else_=0)
             ).label("sev_critical"),
@@ -88,6 +90,8 @@ async def get_model_stats(
                     average_latency_ms=row["avg_latency"],
                     distinct_failure_types=row["distinct_types"] or 0,
                     severity_breakdown=severity_breakdown,
+                    average_cost_usd=row["avg_cost"],
+                    total_cost_usd=row["total_cost"],
                 )
             )
 

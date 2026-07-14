@@ -10,7 +10,7 @@ import os
 import uuid
 
 from database import init_db
-from routers import events, failures, patterns, models, stats, health, correlations, feedback
+from routers import events, failures, patterns, models, stats, health, correlations, feedback, recommendations
 from auth import verify_api_key
 from ratelimit import default_rate_limit
 from retention import retention_loop, DATA_RETENTION_DAYS
@@ -104,6 +104,7 @@ app.include_router(models.router, prefix="/api/v1", tags=["models"], dependencie
 app.include_router(stats.router, prefix="/api/v1", tags=["stats"], dependencies=protected)
 app.include_router(correlations.router, prefix="/api/v1", tags=["correlations"], dependencies=protected)
 app.include_router(feedback.router, prefix="/api/v1", tags=["feedback"], dependencies=protected)
+app.include_router(recommendations.router, prefix="/api/v1", tags=["recommendations"], dependencies=protected)
 
 
 # Global exception handler

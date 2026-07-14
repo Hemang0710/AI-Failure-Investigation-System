@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 
 from models import FailureEvent, Pattern
+from alerting import send_alert, check_failure_rate_spikes
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,10 @@ async def run_pattern_analysis(
         if df.empty:
             logger.info(f"No events in last {hours} hours for pattern analysis")
             return 0
+
+        # Spike alerting is independent of clustering: a model can burn
+        # without any single failure type reaching min_occurrences.
+        await check_failure_rate_spikes(db)
 
         # Compute pattern groups
         pattern_groups = _compute_pattern_groups(df, min_occurrences)
@@ -252,6 +257,23 @@ async def _upsert_pattern(
         else:
             # Create new pattern
             pattern_id = f"pat_{uuid.uuid4().hex[:8]}"
+            failure_label = (
+                failure_type.value if hasattr(failure_type, "value") else str(failure_type)
+            )
+            await send_alert(
+                kind="new_pattern",
+                key=f"pattern:{failure_label}:{model_name}",
+                message=(
+                    f"New failure pattern detected: {failure_label} on "
+                    f"{model_name} ({stats['occurrence_count']} occurrences)."
+                ),
+                data={
+                    "failure_type": failure_label,
+                    "model_name": model_name,
+                    "occurrence_count": stats["occurrence_count"],
+                    "suggested_remediation": remediation,
+                },
+            )
             new_pattern = Pattern(
                 pattern_id=pattern_id,
                 failure_type=failure_type,

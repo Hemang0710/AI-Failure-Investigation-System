@@ -14,6 +14,7 @@ from auth import verify_api_key
 from models import FailureEvent, APIKey
 from ratelimit import ingest_rate_limit
 from redaction import redact_text, redact_list
+from pricing import estimate_cost
 from schemas import BatchEventIngestion, EventIngestionResponse
 from services.pattern_engine import run_pattern_analysis
 
@@ -53,6 +54,15 @@ async def ingest_events(
         for event_data in batch.events:
             event_id = f"evt_{uuid.uuid4().hex[:8]}"
 
+            # Estimate cost from token counts when the caller didn't supply it.
+            cost_usd = event_data.cost_usd
+            if cost_usd is None:
+                cost_usd = estimate_cost(
+                    event_data.model_name,
+                    event_data.input_tokens,
+                    event_data.output_tokens,
+                )
+
             # Redact PII before anything is persisted (no-op if disabled).
             event = FailureEvent(
                 event_id=event_id,
@@ -67,6 +77,10 @@ async def ingest_events(
                 confidence_score=event_data.confidence_score,
                 failure_type=event_data.failure_type,
                 failure_severity=event_data.failure_severity,
+                task_type=event_data.task_type.value if event_data.task_type else None,
+                input_tokens=event_data.input_tokens,
+                output_tokens=event_data.output_tokens,
+                cost_usd=cost_usd,
                 retrieval_score=event_data.retrieval_score,
                 retrieval_results=redact_list(event_data.retrieval_results),
                 context_relevance=event_data.context_relevance,
@@ -94,6 +108,10 @@ async def ingest_events(
                     "confidence_score": e.confidence_score,
                     "failure_type": e.failure_type,
                     "failure_severity": e.failure_severity,
+                    "task_type": e.task_type,
+                    "input_tokens": e.input_tokens,
+                    "output_tokens": e.output_tokens,
+                    "cost_usd": e.cost_usd,
                     "retrieval_score": e.retrieval_score,
                     "retrieval_results": e.retrieval_results,
                     "context_relevance": e.context_relevance,

@@ -49,10 +49,12 @@ async def get_failures(
     Sort options: timestamp, confidence_score, latency_ms
     """
     try:
-        # Build filters
+        # Build filters. Success events (failure_type IS NULL) live in the
+        # same table but are not failures, so they are always excluded here.
         filters = []
         time_threshold = datetime.now(timezone.utc) - timedelta(hours=hours)
         filters.append(FailureEvent.timestamp >= time_threshold)
+        filters.append(FailureEvent.failure_type.isnot(None))
 
         if type:
             filters.append(FailureEvent.failure_type == type)

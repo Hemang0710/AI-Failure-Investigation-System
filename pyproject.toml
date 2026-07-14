@@ -12,6 +12,7 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 # Tests import backend modules directly (import main, redaction, ...) and run
 # against SQLite, so no Postgres is required in CI.
-pythonpath = ["backend"]
+# Repo root is included so tests can import the sdk package.
+pythonpath = ["backend", "."]
 testpaths = ["backend/tests"]
 addopts = "-q"

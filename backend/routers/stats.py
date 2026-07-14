@@ -106,7 +106,10 @@ async def get_system_stats(
         model_failure_query = select(
             FailureEvent.model_name, func.count()
         ).select_from(FailureEvent).where(
-            FailureEvent.timestamp >= time_threshold
+            and_(
+                FailureEvent.timestamp >= time_threshold,
+                FailureEvent.failure_type.isnot(None),
+            )
         ).group_by(FailureEvent.model_name).order_by(func.count().desc()).limit(1)
         model_failure_result = await db.execute(model_failure_query)
         model_row = model_failure_result.first()
