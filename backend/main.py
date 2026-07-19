@@ -46,11 +46,22 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS Configuration
+# CORS Configuration.
+# When CORS_ORIGINS is the wildcard we must NOT also allow credentials: the
+# "*" + credentials combination is rejected by browsers and makes Starlette
+# reflect *any* Origin back with Access-Control-Allow-Credentials, which is an
+# open-CORS footgun. Auth is via Bearer token (no cookies), so credentials are
+# not needed in the wildcard case anyway.
+_cors_origins = [
+    o.strip()
+    for o in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8501").split(",")
+    if o.strip()
+]
+_cors_allow_all = "*" in _cors_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8501").split(","),
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=not _cors_allow_all,
     allow_methods=["*"],
     allow_headers=["*"],
 )

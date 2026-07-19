@@ -185,8 +185,8 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your configuration
 
-# Run migrations
-alembic upgrade head
+# No migration step: the schema is created (and additively upgraded) on
+# first startup. Just point ASYNC_DATABASE_URL at your database.
 
 # Start backend
 python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000

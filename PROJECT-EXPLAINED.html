@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Failure Investigation System — Explained A to Z</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#161d2e; --panel2:#1c2740; --ink:#e7ecf5; --muted:#9aa7bd;
+    --line:#26324b; --brand:#6ea8fe; --brand2:#8b7bff;
+    --green:#3ddc97; --green-bg:#123227; --amber:#ffcf6b; --amber-bg:#332a12;
+    --red:#ff8a8a; --red-bg:#341a1c; --blue:#7cc0ff; --blue-bg:#12283f;
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:linear-gradient(180deg,#0c1119,#0f1420 40%); color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+  header.hero{
+    padding:56px 0 34px; border-bottom:1px solid var(--line);
+    background:radial-gradient(1200px 400px at 20% -10%,rgba(110,168,254,.18),transparent 60%);
+  }
+  .kicker{color:var(--brand);font-weight:700;letter-spacing:.14em;text-transform:uppercase;font-size:12px}
+  h1{font-size:clamp(28px,5vw,44px);line-height:1.1;margin:.35em 0 .25em;letter-spacing:-.02em}
+  .sub{color:var(--muted);font-size:18px;max-width:70ch}
+  .meta{margin-top:18px;display:flex;flex-wrap:wrap;gap:8px}
+  .chip{background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+        padding:5px 11px;border-radius:999px;font-size:12.5px}
+  .chip b{color:var(--ink);font-weight:600}
+
+  nav.toc{
+    position:sticky;top:0;z-index:5;background:rgba(15,20,32,.86);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);padding:12px 0;margin-bottom:8px;
+  }
+  nav.toc .wrap{display:flex;gap:8px;flex-wrap:wrap}
+  nav.toc a{color:var(--muted);text-decoration:none;font-size:13px;font-weight:600;
+    padding:6px 11px;border-radius:8px;border:1px solid transparent}
+  nav.toc a:hover{color:var(--ink);background:var(--panel);border-color:var(--line)}
+
+  main{padding:26px 0 80px}
+  section{margin:38px 0}
+  h2{font-size:24px;letter-spacing:-.01em;margin:0 0 6px;display:flex;align-items:center;gap:10px}
+  h2 .num{font-size:13px;color:var(--brand);border:1px solid var(--line);background:var(--panel);
+    border-radius:8px;padding:2px 8px;font-weight:700}
+  .lead{color:var(--muted);margin:0 0 18px}
+
+  .qa{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:20px 22px;margin:14px 0}
+  .qa h3{margin:0 0 8px;font-size:18px;color:#fff}
+  .qa h3::before{content:"Q";display:inline-grid;place-items:center;width:24px;height:24px;
+    margin-right:10px;background:linear-gradient(135deg,var(--brand),var(--brand2));
+    color:#0c1119;border-radius:7px;font-size:13px;font-weight:800;vertical-align:middle}
+  .qa p{margin:.5em 0}
+  .qa p:first-of-type{margin-top:0}
+  .qa ul{margin:.5em 0 .2em;padding-left:22px}
+  .qa li{margin:.3em 0}
+  .qa strong{color:#fff}
+
+  code{background:#0c1119;border:1px solid var(--line);border-radius:6px;padding:1px 6px;
+    font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:13.5px;color:#b9d0ff}
+  pre{background:#0b0f18;border:1px solid var(--line);border-radius:10px;padding:14px 16px;
+    overflow-x:auto;margin:12px 0}
+  pre code{background:none;border:none;padding:0;color:#cdd8ec;font-size:13px;line-height:1.6}
+
+  .callout{border-radius:12px;padding:14px 16px;margin:14px 0;border:1px solid;font-size:15px}
+  .callout .tag{font-weight:800;text-transform:uppercase;letter-spacing:.08em;font-size:11px;
+    display:inline-block;margin-bottom:4px}
+  .c-green{background:var(--green-bg);border-color:#1f5f47}.c-green .tag{color:var(--green)}
+  .c-amber{background:var(--amber-bg);border-color:#6b571f}.c-amber .tag{color:var(--amber)}
+  .c-red{background:var(--red-bg);border-color:#6b3336}.c-red .tag{color:var(--red)}
+  .c-blue{background:var(--blue-bg);border-color:#274b6b}.c-blue .tag{color:var(--blue)}
+
+  .badge{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:2px 8px;
+    vertical-align:middle;margin-left:6px}
+  .b-real{background:var(--green-bg);color:var(--green);border:1px solid #1f5f47}
+  .b-synth{background:var(--amber-bg);color:var(--amber);border:1px solid #6b571f}
+
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+  .scroll{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+  th,td{text-align:left;padding:10px 13px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--panel2);color:#fff;font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;position:sticky;top:0}
+  tr:last-child td{border-bottom:none}
+  td code{white-space:nowrap}
+
+  .flow{display:flex;flex-direction:column;gap:0;margin:16px 0}
+  .flow .step{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 16px}
+  .flow .step b{color:#fff}.flow .step span{color:var(--muted);font-size:14px}
+  .flow .arrow{align-self:center;color:var(--brand);font-size:20px;line-height:1;margin:3px 0}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:720px){.grid2{grid-template-columns:1fr}}
+  .mini{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .mini h4{margin:0 0 6px;font-size:15px;color:#fff}
+  .mini p{margin:0;color:var(--muted);font-size:14px}
+
+  .verdict{background:linear-gradient(135deg,rgba(110,168,254,.12),rgba(139,123,255,.12));
+    border:1px solid var(--line);border-radius:16px;padding:22px 24px;margin:18px 0}
+  .verdict h3{margin:0 0 10px;font-size:20px;color:#fff}
+
+  footer{border-top:1px solid var(--line);padding:26px 0 60px;color:var(--muted);font-size:13.5px}
+  a.inline{color:var(--brand);text-decoration:none;border-bottom:1px solid rgba(110,168,254,.35)}
+  a.inline:hover{border-bottom-color:var(--brand)}
+  .small{font-size:13px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="kicker">Project walkthrough · plain English</div>
+    <h1>AI Failure Investigation System</h1>
+    <p class="sub">An observability tool that watches your Large Language Model (LLM) app in production, records when its answers go wrong, and helps you figure out <em>why</em> — and which model to use for which job. This page explains the whole thing, A&nbsp;to&nbsp;Z, including the honest answer to “is this real data or fake?”</p>
+    <div class="meta">
+      <span class="chip"><b>Backend:</b> FastAPI + SQLAlchemy</span>
+      <span class="chip"><b>Storage:</b> PostgreSQL / SQLite</span>
+      <span class="chip"><b>Dashboard:</b> Streamlit</span>
+      <span class="chip"><b>Analysis:</b> Pandas + statistics</span>
+      <span class="chip"><b>Client:</b> Python SDK</span>
+      <span class="chip"><b>License:</b> MIT</span>
+    </div>
+  </div>
+</header>
+
+<nav class="toc">
+  <div class="wrap">
+    <a href="#basics">1 · Basics</a>
+    <a href="#how">2 · How it works</a>
+    <a href="#brain">3 · The “brain”</a>
+    <a href="#stack">4 · Tech &amp; files</a>
+    <a href="#truth">5 · Real or fake data?</a>
+    <a href="#use">6 · Using it for real</a>
+    <a href="#limits">7 · Honest limits</a>
+  </div>
+</nav>
+
+<main class="wrap">
+
+<!-- ============ SECTION 1 ============ -->
+<section id="basics">
+  <h2><span class="num">01</span> The basics</h2>
+  <p class="lead">Start here if the whole thing is a mystery.</p>
+
+  <div class="qa">
+    <h3>What is this project, in one sentence?</h3>
+    <p>It’s a <strong>monitoring and diagnosis system for AI (LLM) apps</strong>: your app tells this system every time the AI gave a bad answer (or a good one), and the system stores those events, spots recurring problems, and shows you charts and suggestions on a dashboard.</p>
+  </div>
+
+  <div class="qa">
+    <h3>What real problem does it solve?</h3>
+    <p>When you build an app on top of GPT-4, Claude, Gemini, etc., the model sometimes fails: it makes facts up (“hallucination”), returns nothing, produces broken JSON, times out, and so on. In production you usually have <strong>no idea how often this happens, on which model, for which type of task, or why</strong>. This project is the equivalent of “error monitoring” (like Sentry/Datadog) but purpose-built for the specific ways LLMs fail.</p>
+  </div>
+
+  <div class="qa">
+    <h3>Who is it actually for?</h3>
+    <p>Engineering / ML teams running LLM features in production who want to answer questions like:</p>
+    <ul>
+      <li>“What’s our real failure rate this week, per model?”</li>
+      <li>“Which model should we use for summarization vs. code generation, based on <em>our</em> traffic?”</li>
+      <li>“Are timeouts caused by high latency? Are hallucinations linked to poor retrieval?”</li>
+      <li>“Give me the exact prompts that failed so I can build a regression test set.”</li>
+    </ul>
+  </div>
+
+  <div class="qa">
+    <h3>What counts as a “failure” here?</h3>
+    <p>The system recognises 9 named failure types. An event with <strong>no</strong> failure type recorded is treated as a <em>success</em>.</p>
+    <div class="scroll">
+    <table>
+      <tr><th>Type</th><th>Meaning</th></tr>
+      <tr><td><code>hallucination</code></td><td>Made-up / incorrect facts</td></tr>
+      <tr><td><code>empty_response</code></td><td>Blank or null answer</td></tr>
+      <tr><td><code>malformed_response</code></td><td>Structurally invalid output (e.g. broken JSON)</td></tr>
+      <tr><td><code>timeout</code></td><td>Request took too long</td></tr>
+      <tr><td><code>semantic_error</code></td><td>Low-quality or logically wrong answer</td></tr>
+      <tr><td><code>confidence_mismatch</code></td><td>Model was confident but wrong (or vice-versa)</td></tr>
+      <tr><td><code>retrieval_failure</code></td><td>RAG search returned poor/no context</td></tr>
+      <tr><td><code>rate_limited</code></td><td>Hit the provider’s rate limit</td></tr>
+      <tr><td><code>token_limit</code></td><td>Context/output token limit exceeded</td></tr>
+    </table>
+    </div>
+    <p class="small">Events are also tagged with a <strong>task type</strong> (summarization, code_generation, extraction, rag_qa, classification, translation, agentic, creative_writing, chat, other) and a <strong>severity</strong> (critical / high / medium / low).</p>
+  </div>
+</section>
+
+<!-- ============ SECTION 2 ============ -->
+<section id="how">
+  <h2><span class="num">02</span> How it works end-to-end</h2>
+  <p class="lead">Follow a single event from your app to the dashboard.</p>
+
+  <div class="flow">
+    <div class="step"><b>1 · Your app</b><br><span>Your code calls an LLM (OpenAI, Anthropic, …). Something goes right or wrong.</span></div>
+    <div class="arrow">↓</div>
+    <div class="step"><b>2 · Python SDK</b> <code>sdk/client.py</code><br><span>You call <code>report_failure(...)</code> or <code>report_success(...)</code>. The SDK buffers events and sends them in batches on a background thread.</span></div>
+    <div class="arrow">↓</div>
+    <div class="step"><b>3 · REST API (FastAPI)</b> <code>POST /api/v1/events</code><br><span>Checks your API key, redacts PII (emails, cards, SSNs…), estimates cost from token counts, and bulk-inserts rows.</span></div>
+    <div class="arrow">↓</div>
+    <div class="step"><b>4 · Database (PostgreSQL / SQLite)</b><br><span>Every event is stored as a structured row: model, task, latency, tokens, cost, confidence, retrieval score, failure type, etc.</span></div>
+    <div class="arrow">↓</div>
+    <div class="step"><b>5 · Analysis engine</b> <code>pattern_engine.py</code> + routers<br><span>Groups failures into <em>patterns</em>, computes <em>correlations</em>, ranks models per task, checks for failure-rate spikes (and can fire a Slack/webhook alert).</span></div>
+    <div class="arrow">↓</div>
+    <div class="step"><b>6 · Dashboard (Streamlit)</b> <code>dashboard/app.py</code><br><span>Reads the API and draws the charts: Overview, Failures, Patterns, Models, Model Fit, Correlations.</span></div>
+  </div>
+
+  <div class="qa">
+    <h3>Is there any AI/model running <em>inside</em> this system?</h3>
+    <div class="callout c-blue">
+      <span class="tag">Important</span>
+      <p style="margin:.3em 0 0">No. This is a surprisingly common misconception. This project does <strong>not run any LLM itself</strong> and does not call OpenAI/Anthropic. It is a <strong>plain data pipeline</strong>: it receives structured records <em>about</em> LLM calls that happened in your app, stores them, and does ordinary statistics (counting, averaging, a correlation coefficient) on top. All the “intelligence” is deterministic Python and pandas — not a neural network.</p>
+    </div>
+  </div>
+
+  <div class="qa">
+    <h3>What are the API endpoints?</h3>
+    <div class="scroll">
+    <table>
+      <tr><th>Endpoint</th><th>Does what</th></tr>
+      <tr><td><code>POST /events</code></td><td>Ingest a batch of events (the main entry point)</td></tr>
+      <tr><td><code>GET /failures</code></td><td>Browse individual failures with filters</td></tr>
+      <tr><td><code>GET /patterns</code></td><td>List detected failure clusters</td></tr>
+      <tr><td><code>GET /patterns/{id}/export</code></td><td>Download a pattern’s failing prompts as a JSONL eval set</td></tr>
+      <tr><td><code>GET /models</code></td><td>Per-model performance stats</td></tr>
+      <tr><td><code>GET /recommendations</code></td><td>Rank models per task (reliability → cost → latency)</td></tr>
+      <tr><td><code>GET /correlations</code></td><td>Which factors are associated with failures</td></tr>
+      <tr><td><code>GET /stats</code></td><td>System-wide summary numbers</td></tr>
+      <tr><td><code>POST /feedback</code></td><td>Tell the system a classification was right/wrong</td></tr>
+      <tr><td><code>GET /health</code></td><td>Health check</td></tr>
+    </table>
+    </div>
+    <p class="small">Every route requires a Bearer API key. Keys are stored as SHA-256 hashes, and requests are rate-limited.</p>
+  </div>
+</section>
+
+<!-- ============ SECTION 3 ============ -->
+<section id="brain">
+  <h2><span class="num">03</span> The “brain” — how the insights are actually computed</h2>
+  <p class="lead">This matters a lot for judging whether to trust the output. Here’s exactly what each “smart” feature does under the hood.</p>
+
+  <div class="qa">
+    <h3>How does “pattern detection” work? <span class="badge b-real">real computation</span></h3>
+    <p>Despite the word “clustering” in the docs, it is <strong>not machine-learning clustering</strong>. It is a pandas <code>groupby</code>: failures from the last N hours are grouped by <code>(failure_type, model_name)</code>. Any group with ≥&nbsp;3 occurrences becomes a “pattern” with counts, averages (confidence, latency, retrieval), and a first/last-seen window.</p>
+    <p>So a “pattern” = <em>“this failure type keeps happening on this model.”</em> That’s genuinely useful and honest — just simpler than the word implies.</p>
+  </div>
+
+  <div class="qa">
+    <h3>Where do the remediation suggestions come from? <span class="badge b-synth">hard-coded templates</span></h3>
+    <p>They’re <strong>fixed text written by the author</strong>, chosen by a lookup table on failure type (with a couple of <code>if</code> branches on confidence/retrieval). Example: a hallucination pattern with high confidence always returns “Add fact-checking prompts or chain-of-thought verification…”.</p>
+    <div class="callout c-amber">
+      <span class="tag">Be clear-eyed</span>
+      <p style="margin:.3em 0 0">These are sensible generic engineering tips, <strong>not</strong> AI-generated advice tailored to your specific prompt. Two different apps with the same failure type get the exact same suggestion.</p>
+    </div>
+  </div>
+
+  <div class="qa">
+    <h3>How are correlations computed? <span class="badge b-real">real statistics</span></h3>
+    <p>This is genuine stats. It uses the <strong>phi coefficient</strong> (φ) — a standard measure of association between two yes/no variables — on pairs the author picked, such as:</p>
+    <ul>
+      <li><code>retrieval_score &lt; 0.5</code> vs. <code>hallucination</code></li>
+      <li><code>latency &gt; 75th percentile</code> vs. <code>timeout</code></li>
+      <li><code>confidence &lt; 0.5</code> vs. <code>hallucination</code> / <code>confidence_mismatch</code></li>
+    </ul>
+    <p>It only runs if there are ≥&nbsp;30 events, and only reports associations with |φ|&nbsp;&gt;&nbsp;0.1. The maths is real; the <em>pairs it checks</em> are a fixed, hand-chosen list (not automatically discovered).</p>
+  </div>
+
+  <div class="qa">
+    <h3>How are model recommendations (“Model Fit”) computed? <span class="badge b-real">real computation</span></h3>
+    <p>For each task type, it groups your events by model and computes the observed <strong>failure rate</strong>, then ranks models by: reliability first → then cost per call → then latency. A model needs at least <code>min_events</code> (default 20) before it can be “recommended”; otherwise it’s shown but flagged as too small a sample.</p>
+    <p>This is a real, honest calculation <strong>over whatever data is in the database</strong>. Which is the crux of the next section: garbage in, garbage out.</p>
+  </div>
+
+  <div class="qa">
+    <h3>How is cost calculated? <span class="badge b-synth">approximate list prices</span></h3>
+    <p>If you don’t supply an exact <code>cost_usd</code>, the API estimates it from token counts using a <strong>built-in table of public list prices</strong> (USD per million tokens) in <code>backend/pricing.py</code>. It matches your model name by longest prefix. These are ballpark public prices for ranking models by cost — <strong>not your real invoice</strong>. You can override them with the <code>MODEL_PRICING_JSON</code> env var.</p>
+  </div>
+</section>
+
+<!-- ============ SECTION 4 ============ -->
+<section id="stack">
+  <h2><span class="num">04</span> Tech stack &amp; what each file does</h2>
+  <p class="lead">Why each technology is here, then a file-by-file map.</p>
+
+  <div class="grid2">
+    <div class="mini"><h4>FastAPI</h4><p>The REST API. Async, fast, auto-generates interactive docs at <code>/docs</code>.</p></div>
+    <div class="mini"><h4>SQLAlchemy (async)</h4><p>Talks to the database in Python objects instead of raw SQL. Works with Postgres or SQLite.</p></div>
+    <div class="mini"><h4>PostgreSQL / SQLite</h4><p>Stores events, patterns, feedback, API keys. Postgres for real use; SQLite for tests.</p></div>
+    <div class="mini"><h4>Pandas</h4><p>Does the grouping, averaging and correlation maths in memory.</p></div>
+    <div class="mini"><h4>Streamlit</h4><p>Turns Python into an interactive web dashboard with almost no front-end code.</p></div>
+    <div class="mini"><h4>Pydantic</h4><p>Validates every incoming event and shapes every API response (the <code>schemas.py</code> layer).</p></div>
+    <div class="mini"><h4>httpx</h4><p>The HTTP client used by the SDK and the demo seeder to call the API.</p></div>
+    <div class="mini"><h4>Docker + Render/Neon</h4><p>Containerised for one-command local run, plus a free-tier cloud deploy recipe.</p></div>
+  </div>
+
+  <h3 style="margin:26px 0 4px;font-size:17px">File map</h3>
+  <div class="scroll">
+  <table>
+    <tr><th>Path</th><th>Role</th></tr>
+    <tr><td><code>backend/main.py</code></td><td>App entry point; wires routers, startup, API-key bootstrap</td></tr>
+    <tr><td><code>backend/models.py</code></td><td>Database tables (FailureEvent, Pattern, APIKey, Feedback)</td></tr>
+    <tr><td><code>backend/schemas.py</code></td><td>Request/response shapes &amp; validation</td></tr>
+    <tr><td><code>backend/database.py</code></td><td>DB connection / session setup</td></tr>
+    <tr><td><code>backend/auth.py</code></td><td>API-key auth (SHA-256 hashed keys)</td></tr>
+    <tr><td><code>backend/redaction.py</code></td><td>Strips PII from prompts/responses before storage</td></tr>
+    <tr><td><code>backend/pricing.py</code></td><td>Token→USD cost estimation table</td></tr>
+    <tr><td><code>backend/ratelimit.py</code></td><td>Per-key / per-IP request throttling</td></tr>
+    <tr><td><code>backend/retention.py</code></td><td>Optional auto-deletion of old events</td></tr>
+    <tr><td><code>backend/alerting.py</code></td><td>Slack/webhook alerts on new patterns &amp; spikes</td></tr>
+    <tr><td><code>backend/services/pattern_engine.py</code></td><td>The core: groups failures into patterns + remediation text</td></tr>
+    <tr><td><code>backend/routers/*.py</code></td><td>One file per endpoint group (events, failures, patterns, models, recommendations, correlations, stats, feedback, health)</td></tr>
+    <tr><td><code>sdk/client.py</code></td><td>The <code>FailureInvestigator</code> client your app imports</td></tr>
+    <tr><td><code>sdk/comparison.py</code></td><td>Shadow A/B: run a candidate model on sampled live prompts</td></tr>
+    <tr><td><code>dashboard/app.py</code></td><td>The Streamlit dashboard UI</td></tr>
+    <tr><td><code>scripts/seed_demo.py</code></td><td><strong>Generates synthetic demo data</strong> (see next section)</td></tr>
+    <tr><td><code>examples/</code></td><td>Sample OpenAI integration &amp; A/B comparison scripts</td></tr>
+    <tr><td><code>backend/tests/</code></td><td>Test suite (runs on SQLite, no DB needed)</td></tr>
+  </table>
+  </div>
+</section>
+
+<!-- ============ SECTION 5 — THE BIG ONE ============ -->
+<section id="truth">
+  <h2><span class="num">05</span> The honest answer: is this real data or predefined?</h2>
+  <p class="lead">This is your main question, so here it is directly and without spin.</p>
+
+  <div class="callout c-amber">
+    <span class="tag">The short version</span>
+    <p style="margin:.3em 0 0">The <strong>demo data is fake (synthetic)</strong> and is <strong>not verified against any real-world benchmark</strong>. The <strong>machinery is real</strong> and produces genuine results — but only when you feed it your own production traffic. The screenshots in the README are a plausible-looking <em>story</em>, not measured facts.</p>
+  </div>
+
+  <div class="qa">
+    <h3>Where does the data in the screenshots / demo come from?</h3>
+    <p>From <code>scripts/seed_demo.py</code>. That script <strong>invents events with Python’s random generator</strong>. It has hard-coded assumptions baked in, for example:</p>
+    <pre><code>BASE_FAILURE_RATE = {"gpt-4o":0.06, "llama-3-70b":0.12, ...}
+TASK_FAILURE_OVERRIDES = {
+    ("gpt-4o","code_generation"): 0.03,      # "gpt-4o is great at code"
+    ("claude-3-5-sonnet","rag_qa"): 0.03,    # "claude is great at RAG"
+    ("llama-3-70b","extraction"): 0.22,      # "llama is weak at extraction"
+}</code></pre>
+    <p>Then it rolls dice against those numbers to manufacture successes and failures. The correlations (low retrieval → hallucination, high latency → timeout) are <strong>deliberately injected</strong> so the charts show something interesting.</p>
+  </div>
+
+  <div class="qa">
+    <h3>So when the demo says “gpt-4o is best for code generation,” is that true?</h3>
+    <div class="callout c-red">
+      <span class="tag">No</span>
+      <p style="margin:.3em 0 0">That conclusion is <strong>true only because the seed script was written to make it true.</strong> It is a self-fulfilling number, not a measurement of the real GPT-4o. Do not cite the demo dashboard as evidence about how any real model performs. It’s a UI demonstration, nothing more.</p>
+    </div>
+  </div>
+
+  <div class="qa">
+    <h3>Will I get the same result every time?</h3>
+    <p><strong>With the demo:</strong> broadly yes — the shape of the story is fixed by the script (though exact numbers wiggle unless you pass a <code>--seed</code>). It’s designed to always tell the same tidy narrative.</p>
+    <p><strong>With real traffic:</strong> no — results change as your app’s real behaviour changes, which is the entire point.</p>
+  </div>
+
+  <div class="qa">
+    <h3>Is any of this “verified” against a strong external reference?</h3>
+    <p><strong>No external benchmark, dataset, or ground truth is wired in.</strong> There is no comparison to public leaderboards (e.g. MMLU, HELM), no third-party validation, and no live model evaluation. The system doesn’t <em>judge</em> whether an answer is a hallucination — <strong>your app decides that and reports it</strong>. The system just aggregates what you tell it.</p>
+    <p>What <em>is</em> tested is the <strong>code</strong>: there’s a pytest suite + CI verifying the API, pattern engine, correlations, redaction, auth, rate-limiting, etc. behave correctly. That’s software correctness — different from “the insights are scientifically validated.”</p>
+  </div>
+
+  <div class="qa">
+    <h3>Is the pricing table real?</h3>
+    <p>They’re <strong>approximate public list prices</strong> from when the table was written, used to <em>rank</em> models by relative cost. Treat them as ballpark, not billing. Real prices change and depend on your contract.</p>
+  </div>
+
+  <div class="verdict">
+    <h3>Bottom line</h3>
+    <p>Think of it like a <strong>fitness tracker with a demo mode</strong>. The demo shows fake step counts to prove the app works — nobody actually walked those steps. But strap it on and it measures <em>your</em> real steps accurately. This project is the same: the demo data is staged, the engine that measures is real. Its usefulness comes entirely from connecting it to your own live LLM traffic.</p>
+  </div>
+</section>
+
+<!-- ============ SECTION 6 ============ -->
+<section id="use">
+  <h2><span class="num">06</span> How to use it for real (and get trustworthy results)</h2>
+  <p class="lead">The steps that turn the demo into a genuinely useful tool.</p>
+
+  <div class="qa">
+    <h3>How do I run the whole thing?</h3>
+    <pre><code># 1. configure secrets (Postgres password + API key)
+cp .env.example .env
+
+# 2. start API + dashboard + database
+docker-compose up -d
+
+# Dashboard →  http://localhost:8501
+# API       →  http://localhost:8000
+# API docs  →  http://localhost:8000/docs</code></pre>
+    <p class="small">To fill the demo (fake) data for a first look: <code>python scripts/seed_demo.py --events 2000 --days 7</code>.</p>
+  </div>
+
+  <div class="qa">
+    <h3>How do I get <em>real</em>, trustworthy numbers?</h3>
+    <p>Instrument your actual app so it reports every real LLM call — both successes and failures:</p>
+    <pre><code>from sdk.client import FailureInvestigator
+
+inv = FailureInvestigator(api_key="sk-...", endpoint="http://localhost:8000")
+
+# good call
+inv.report_success(model_name="gpt-4o", task_type="summarization",
+                   latency_ms=740, input_tokens=1800, output_tokens=220)
+
+# bad call — YOUR code decided this was a hallucination
+inv.report_failure({
+    "timestamp": "...", "model_name": "gpt-4o", "task_type": "rag_qa",
+    "failure_type": "hallucination", "failure_severity": "high",
+    "confidence_score": 0.3, "retrieval_score": 0.2,
+})</code></pre>
+    <div class="callout c-green">
+      <span class="tag">The key insight</span>
+      <p style="margin:.3em 0 0">The quality of every chart depends entirely on <strong>you reporting successes too</strong> (not just failures) and on <strong>your own logic for deciding what’s a failure</strong>. Report only failures and your “failure rate” will look like 100%. This is the honest work the tool can’t do for you.</p>
+    </div>
+  </div>
+
+  <div class="qa">
+    <h3>What about privacy — does it store my users’ prompts?</h3>
+    <p>Prompts and responses can be stored, but <strong>PII redaction is on by default</strong>: emails, credit cards, SSNs, phone numbers, IPs and API keys are stripped <em>before</em> anything is written to the database. You can also enable data retention to auto-delete events older than N days. See <code>SECURITY.md</code>.</p>
+  </div>
+
+  <div class="qa">
+    <h3>What are the genuinely useful, real features?</h3>
+    <ul>
+      <li><strong>Real failure-rate tracking</strong> per model/task once you send real events.</li>
+      <li><strong>Real correlation analysis</strong> (phi coefficient) surfacing e.g. “low retrieval score really does track with hallucinations in <em>your</em> data.”</li>
+      <li><strong>Pattern → JSONL export:</strong> turn a real failure cluster into a regression test set with one click.</li>
+      <li><strong>Shadow A/B:</strong> run a candidate model on a sample of live prompts and compare — the strongest evidence for “model X is better at task Y.”</li>
+      <li><strong>Alerting:</strong> Slack/webhook when a new pattern appears or a failure rate spikes.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ SECTION 7 ============ -->
+<section id="limits">
+  <h2><span class="num">07</span> Honest limitations &amp; maturity</h2>
+  <p class="lead">So you can set expectations correctly.</p>
+
+  <div class="grid2">
+    <div class="mini"><h4>It doesn’t detect failures for you</h4><p>Your app must classify each call. The system only aggregates your labels.</p></div>
+    <div class="mini"><h4>“Clustering” is groupby</h4><p>No ML clustering or embeddings — patterns are exact <code>(type, model)</code> groups.</p></div>
+    <div class="mini"><h4>Remediation is templated</h4><p>Fixed generic tips per failure type, not tailored AI advice.</p></div>
+    <div class="mini"><h4>Correlations are a fixed list</h4><p>Only the hand-picked factor pairs are checked, not auto-discovered ones.</p></div>
+    <div class="mini"><h4>Costs are estimates</h4><p>Public list prices for ranking, not your actual invoice.</p></div>
+    <div class="mini"><h4>Single-tenant</h4><p>Multi-tenant support and ML-based root cause are on the roadmap, not built.</p></div>
+  </div>
+
+  <div class="callout c-blue" style="margin-top:18px">
+    <span class="tag">How to describe it accurately</span>
+    <p style="margin:.3em 0 0">“A working, MIT-licensed <strong>LLM observability platform</strong> — SDK + FastAPI + Postgres + Streamlit — that ingests LLM call events, aggregates failure rates and patterns, runs real correlation analysis, and ranks models per task on your own traffic. It ships with a synthetic demo dataset for illustration; real value requires instrumenting your own app.” That sentence is fully defensible.</p>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Generated from a full read of the codebase (backend routers, <code>pattern_engine.py</code>, <code>correlations.py</code>, <code>recommendations.py</code>, <code>pricing.py</code>, the SDK, and <code>seed_demo.py</code>). Every “real vs. synthetic” badge on this page reflects what the code actually does.</p>
+    <p class="small">AI Failure Investigation System · MIT License · Author: Hemang Patel. This explainer is a static HTML file — open it in any browser.</p>
+  </div>
+</footer>
+
+</body>
+</html>

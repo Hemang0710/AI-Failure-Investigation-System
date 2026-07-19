@@ -1,8 +1,14 @@
-# Development & CI dependencies (installed on top of runtime requirements)
+# Development & CI dependencies (installed on top of runtime requirements).
+# CI runs: ruff check + pytest. None of these ship to the production image.
 -r requirements.txt
 
 # Async SQLite driver used by the test suite (tests run without Postgres)
 aiosqlite>=0.19.0
 
-# Linter/formatter (replaces the flake8 role in CI)
+# Linter/formatter (replaces flake8/black in CI)
 ruff>=0.6,<0.13
+
+# Test runner + async + coverage (see CONTRIBUTING.md)
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0

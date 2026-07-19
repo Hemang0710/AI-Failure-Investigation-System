@@ -2,10 +2,13 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir streamlit pandas httpx
-
 # Copy entire project structure
 COPY . /app
+
+# Install dashboard dependencies from the requirements file so the image
+# stays in sync with dashboard/requirements.txt (streamlit, pandas, httpx,
+# matplotlib, python-dotenv, ...)
+RUN pip install --no-cache-dir -r /app/dashboard/requirements.txt
 
 # Make run script executable
 RUN chmod +x /app/dashboard/run.sh

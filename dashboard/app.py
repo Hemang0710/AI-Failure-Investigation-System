@@ -11,6 +11,16 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+# Load environment variables from the project-root .env, so the dashboard
+# picks up FAILURE_INVESTIGATOR_API_KEY / _ENDPOINT without needing them
+# exported into the shell. Existing environment variables take precedence.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(os.path.join(project_root, ".env"))
+except ImportError:
+    pass
+
 from sdk import FailureInvestigator
 import pandas as pd
 import numpy as np
@@ -64,6 +74,20 @@ def get_investigator():
         st.stop()
     endpoint = os.getenv("FAILURE_INVESTIGATOR_ENDPOINT", "http://localhost:8000")
     return FailureInvestigator(api_key=api_key, endpoint=endpoint)
+
+
+@st.cache_data(ttl=60)
+def get_model_names(_investigator, hours=168):
+    """Distinct model names seen in the window, for filter dropdowns.
+
+    The leading underscore on ``_investigator`` tells Streamlit not to hash it.
+    """
+    try:
+        data = _investigator.get_models(hours=hours)
+    except Exception:
+        return []
+    models = (data or {}).get("models") or []
+    return sorted({m.get("model_name") for m in models if m.get("model_name")})
 
 
 def main():
@@ -203,7 +227,10 @@ def show_failures(investigator):
     with col1:
         hours = st.slider("Time range (hours)", 1, 168, 24, key="failures_hours")
     with col2:
-        model = st.text_input("Filter model", "")
+        model_names = get_model_names(investigator)
+        model = st.selectbox("Filter model", ["All models"] + model_names)
+        if model == "All models":
+            model = None
     with col3:
         failure_type = st.selectbox(
             "Failure type",
@@ -660,7 +687,10 @@ def show_correlations(investigator):
     with col1:
         hours = st.slider("Analysis window (hours)", 24, 720, 168, key="corr_hours")
     with col2:
-        model_filter = st.text_input("Filter by model (optional)", "")
+        model_names = get_model_names(investigator)
+        model_filter = st.selectbox("Filter by model (optional)", ["All models"] + model_names)
+        if model_filter == "All models":
+            model_filter = None
 
     correlations_data = investigator.get_correlations(
         model=model_filter if model_filter else None,
